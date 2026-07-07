@@ -329,11 +329,25 @@ export class Player {
       }
     }
 
-    // 飞行模式垂直移动
+    // 飞行模式：视角决定飞行方向，Space/Shift 纯垂直升降
     if (this.flying) {
-      if (input.keys['Space']) this.velocity.y = FLY_SPEED;
-      else if (input.keys['ShiftLeft']) this.velocity.y = -FLY_SPEED;
-      else this.velocity.y = 0;
+      // 计算视线方向（含俯仰角）
+      const cp = Math.cos(this.pitch);
+      const lookX = -sinY * cp;
+      const lookY = Math.sin(this.pitch);
+      const lookZ = -cosY * cp;
+      // 右方向（水平面内垂直于视线）
+      const rightX = cosY;
+      const rightZ = -sinY;
+
+      // 前进方向 = 视线方向 * forward + 右方向 * strafe
+      this.velocity.x = (lookX * forward + rightX * strafe) * speed;
+      this.velocity.z = (lookZ * forward + rightZ * strafe) * speed;
+      // 垂直：视角俯仰 + Space/Shift 覆盖
+      let vy = lookY * forward * speed;
+      if (input.keys['Space']) vy = FLY_SPEED;
+      else if (input.keys['ShiftLeft']) vy = -FLY_SPEED;
+      this.velocity.y = vy;
     }
   }
 
