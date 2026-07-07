@@ -1,0 +1,12 @@
+{
+  "name": "minecraft-js",
+  "version": "1.0.0",
+  "description": "在浏览器中完整复刻《我的世界》Java版核心体验",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "serve": "node server.js"
+  },
+  "keywords": ["minecraft", "voxel", "three.js", "webgl", "game"],
+  "license": "MIT"
+}

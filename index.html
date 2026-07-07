@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Minecraft JS - 我的世界浏览器版</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <!-- 启动画面 -->
+  <div id="splash-screen" class="screen">
+    <div class="splash-content">
+      <h1 class="game-title">MINECRAFT</h1>
+      <p class="game-subtitle">JavaScript Edition</p>
+      <button id="start-btn" class="menu-btn primary">单人游戏</button>
+      <button id="multiplayer-btn" class="menu-btn">多人联机</button>
+      <button id="settings-btn-splash" class="menu-btn">设置</button>
+      <button id="load-btn" class="menu-btn">读取存档</button>
+      <p class="version-text">v2.0.0 — 基于 Three.js · 含创造/生存/极限/旁观/空岛</p>
+    </div>
+  </div>
+
+  <!-- 游戏模式选择 -->
+  <div id="gamemode-screen" class="screen hidden">
+    <div class="splash-content">
+      <h2>选择游戏模式</h2>
+      <div class="gamemode-grid">
+        <div class="gamemode-card selected" data-gamemode="0">
+          <div class="gamemode-icon">⚔️</div>
+          <div class="gamemode-name">生存模式</div>
+          <div class="gamemode-desc">采集资源，制作工具，与怪物战斗</div>
+        </div>
+        <div class="gamemode-card" data-gamemode="1">
+          <div class="gamemode-icon">🎨</div>
+          <div class="gamemode-name">创造模式</div>
+          <div class="gamemode-desc">无限方块，自由飞行，无伤害</div>
+        </div>
+        <div class="gamemode-card" data-gamemode="2">
+          <div class="gamemode-icon">💀</div>
+          <div class="gamemode-name">极限模式</div>
+          <div class="gamemode-desc">只有一条命，怪物更强</div>
+        </div>
+        <div class="gamemode-card" data-gamemode="3">
+          <div class="gamemode-icon">👁️</div>
+          <div class="gamemode-name">旁观模式</div>
+          <div class="gamemode-desc">穿墙飞行，观看世界</div>
+        </div>
+        <div class="gamemode-card" data-gamemode="4">
+          <div class="gamemode-icon">🏝️</div>
+          <div class="gamemode-name">空岛模式</div>
+          <div class="gamemode-desc">在浮空小岛上生存，资源有限</div>
+        </div>
+      </div>
+      <button id="gamemode-start-btn" class="menu-btn primary">开始游戏</button>
+      <button id="gamemode-back-btn" class="menu-btn">返回</button>
+    </div>
+  </div>
+
+    <!-- 多人联机界面 -->
+  <div id="multiplayer-screen" class="screen hidden">
+    <div class="splash-content">
+      <h2>多人联机</h2>
+      <div class="mp-section">
+        <h3>快速小游戏</h3>
+        <div class="minigame-list">
+          <button class="menu-btn small" onclick="window.startMinigame('pvp_arena')">⚔️ PvP 竞技场</button>
+          <button class="menu-btn small" onclick="window.startMinigame('build_battle')">🏗️ 建造大战</button>
+          <button class="menu-btn small" onclick="window.startMinigame('spleef')">❄️ 掘雪场</button>
+          <button class="menu-btn small" onclick="window.startMinigame('capture_flag')">🚩 夺旗模式</button>
+        </div>
+      </div>
+      <div class="mp-divider">— 或 —</div>
+      <div class="mp-section">
+        <h3>创建房间（主机）</h3>
+        <p id="room-id-label">点击下方按钮创建房间</p>
+        <p id="room-id-wrapper" class="hidden">你的房间ID：<span id="room-id-display">生成中...</span></p>
+        <button id="create-room-btn" class="menu-btn primary">创建房间</button>
+        <button id="enter-host-game-btn" class="menu-btn primary hidden">进入游戏</button>
+        <button id="copy-room-btn" class="menu-btn small hidden">复制ID</button>
+        <p class="hint" id="host-hint">创建房间后分享ID给其他玩家</p>
+      </div>
+      <div class="mp-divider">— 或 —</div>
+      <div class="mp-section">
+        <h3>加入房间</h3>
+        <input type="text" id="join-room-input" placeholder="输入主机ID" class="text-input">
+        <p id="join-status" class="hint hidden"></p>
+        <button id="join-room-btn" class="menu-btn primary">加入</button>
+        <button id="enter-client-game-btn" class="menu-btn primary hidden">进入游戏</button>
+      </div>
+      <button id="mp-back-btn" class="menu-btn">返回</button>
+    </div>
+  </div>
+
+  <!-- 设置界面（启动时） -->
+  <div id="settings-screen-splash" class="screen hidden">
+    <div class="splash-content">
+      <h2>设置</h2>
+      <div class="settings-list">
+        <div class="setting-row">
+          <label>渲染距离</label>
+          <select id="set-render-distance">
+            <option value="3">3 区块 (低)</option>
+            <option value="5" selected>5 区块 (中)</option>
+            <option value="7">7 区块 (高)</option>
+            <option value="10">10 区块 (极高)</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <label>鼠标灵敏度</label>
+          <input type="range" id="set-sensitivity" min="0.5" max="3" step="0.1" value="1.5">
+          <span id="sensitivity-val">1.5</span>
+        </div>
+        <div class="setting-row">
+          <label>雾效</label>
+          <input type="checkbox" id="set-fog" checked>
+        </div>
+        <div class="setting-row">
+          <label>FOV (视野)</label>
+          <input type="range" id="set-fov" min="60" max="110" step="5" value="75">
+          <span id="fov-val">75</span>
+        </div>
+        <div class="setting-row">
+          <label>显示FPS</label>
+          <input type="checkbox" id="set-show-fps" checked>
+        </div>
+      </div>
+      <button id="settings-back-btn" class="menu-btn">返回</button>
+    </div>
+  </div>
+
+  <!-- 游戏画布容器 -->
+  <div id="game-container" class="hidden">
+    <canvas id="game-canvas"></canvas>
+
+    <!-- 准星 -->
+    <div id="crosshair"></div>
+
+    <!-- FPS显示 -->
+    <div id="fps-display"></div>
+
+    <!-- 坐标显示 -->
+    <div id="coords-display"></div>
+
+    <!-- 时间显示 -->
+    <div id="time-display"></div>
+
+    <!-- 快捷栏 -->
+    <div id="hotbar">
+      <div class="hotbar-slots" id="hotbar-slots"></div>
+    </div>
+
+    <!-- 生命值和饥饿值 -->
+    <div id="status-bars">
+      <div id="health-bar" class="stat-bar"></div>
+      <div id="oxygen-bar" class="stat-bar hidden"></div>
+      <div id="hunger-bar" class="stat-bar"></div>
+    </div>
+
+    <!-- 背包界面 -->
+    <div id="inventory-screen" class="overlay hidden">
+      <div class="inventory-panel">
+        <h2>背包</h2>
+        <div class="inventory-grid" id="inventory-grid"></div>
+        <h3>合成</h3>
+        <div class="crafting-area">
+          <div class="crafting-grid" id="crafting-grid"></div>
+          <div class="crafting-arrow">➜</div>
+          <div class="crafting-output" id="crafting-output"></div>
+        </div>
+        <div class="recipe-list" id="recipe-list"></div>
+        <button id="inv-close-btn" class="menu-btn">关闭 (E)</button>
+      </div>
+    </div>
+
+    <!-- 暂停菜单 -->
+    <div id="pause-menu" class="overlay hidden">
+      <div class="menu-panel">
+        <h2>游戏暂停</h2>
+        <button id="resume-btn" class="menu-btn primary">继续游戏</button>
+        <button id="pause-settings-btn" class="menu-btn">设置</button>
+        <button id="save-btn" class="menu-btn">保存游戏</button>
+        <button id="quit-btn" class="menu-btn">退出到主菜单</button>
+      </div>
+    </div>
+
+    <!-- 暂停时设置 -->
+    <div id="pause-settings" class="overlay hidden">
+      <div class="menu-panel">
+        <h2>设置</h2>
+        <div class="settings-list">
+          <div class="setting-row">
+            <label>渲染距离</label>
+            <select id="set-render-distance-2">
+              <option value="3">3 区块</option>
+              <option value="5" selected>5 区块</option>
+              <option value="7">7 区块</option>
+              <option value="10">10 区块</option>
+            </select>
+          </div>
+          <div class="setting-row">
+            <label>鼠标灵敏度</label>
+            <input type="range" id="set-sensitivity-2" min="0.5" max="3" step="0.1" value="1.5">
+            <span id="sensitivity-val-2">1.5</span>
+          </div>
+          <div class="setting-row">
+            <label>雾效</label>
+            <input type="checkbox" id="set-fog-2" checked>
+          </div>
+          <div class="setting-row">
+            <label>FOV</label>
+            <input type="range" id="set-fov-2" min="60" max="110" step="5" value="75">
+            <span id="fov-val-2">75</span>
+          </div>
+          <div class="setting-row">
+            <label>显示FPS</label>
+            <input type="checkbox" id="set-show-fps-2" checked>
+          </div>
+        </div>
+        <button id="pause-settings-back" class="menu-btn">返回</button>
+      </div>
+    </div>
+
+    <!-- 死亡画面 -->
+    <div id="death-screen" class="overlay hidden">
+      <div class="death-panel">
+        <h1 class="death-title">你死了</h1>
+        <button id="respawn-btn" class="menu-btn primary">重生</button>
+      </div>
+    </div>
+
+    <!-- 聊天框（单人/多人模式） -->
+    <div id="chat-box" class="hidden">
+      <div id="chat-messages"></div>
+      <input type="text" id="chat-input" placeholder="按 T 聊天... 输入 /help 查看指令" maxlength="200">
+    </div>
+
+    <!-- 游戏模式显示 -->
+    <div id="gamemode-display"></div>
+
+    <!-- 天气显示 -->
+    <div id="weather-display"></div>
+
+    <!-- 小游戏记分牌 -->
+    <div id="minigame-scoreboard" class="hidden"></div>
+
+    <!-- 成就通知容器 -->
+    <div id="achievement-notifications"></div>
+
+    <!-- 加载提示 -->
+    <div id="loading-overlay" class="overlay">
+      <div class="loading-content">
+        <h2>生成世界中...</h2>
+        <div class="loading-bar">
+          <div class="loading-fill" id="loading-fill"></div>
+        </div>
+        <p id="loading-text">0%</p>
+      </div>
+    </div>
+
+    <!-- 伤害闪屏 -->
+    <div id="damage-overlay"></div>
+
+    <!-- 提示消息 -->
+    <div id="toast-message"></div>
+
+    <!-- 当前手持方块显示（右下角） -->
+    <div id="held-block-display"></div>
+
+    <!-- 移动端控制（由 mobile.js 动态生成，CSS在此预定义） -->
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
