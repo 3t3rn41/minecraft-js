@@ -180,6 +180,11 @@ export const BLOCK = {
   ROCKET_LAUNCHER: 172,
   BULLET_ITEM: 173,
   ROCKET_AMMO: 174,
+  // ===== 新增枪械/弹药 =====
+  GATLING: 177,
+  BARRETT: 178,
+  GATLING_AMMO: 179,
+  BARRETT_AMMO: 180,
   // ===== 水生植物 =====
   SEAGRASS: 175,
   KELP: 176,
@@ -361,6 +366,11 @@ export const BLOCK_DEFS = {
   [BLOCK.ROCKET_LAUNCHER]: { name: '火箭筒', solid: false, transparent: true, textures: [169, 169, 169], drops: BLOCK.ROCKET_LAUNCHER },
   [BLOCK.BULLET_ITEM]: { name: '子弹', solid: false, transparent: true, textures: [170, 170, 170], drops: BLOCK.BULLET_ITEM },
   [BLOCK.ROCKET_AMMO]: { name: '火箭弹', solid: false, transparent: true, textures: [171, 171, 171], drops: BLOCK.ROCKET_AMMO },
+  // ===== 新增枪械/弹药 =====
+  [BLOCK.GATLING]: { name: '加特林', solid: false, transparent: true, textures: [174, 174, 174], drops: BLOCK.GATLING },
+  [BLOCK.BARRETT]: { name: '巴雷特', solid: false, transparent: true, textures: [175, 175, 175], drops: BLOCK.BARRETT },
+  [BLOCK.GATLING_AMMO]: { name: '加特林子弹', solid: false, transparent: true, textures: [176, 176, 176], drops: BLOCK.GATLING_AMMO },
+  [BLOCK.BARRETT_AMMO]: { name: '巴雷特子弹', solid: false, transparent: true, textures: [177, 177, 177], drops: BLOCK.BARRETT_AMMO },
 // ===== 水生植物 =====
 [BLOCK.SEAGRASS]: { name: '海草', solid: false, transparent: true, textures: [172, 172, 172], drops: BLOCK.SEAGRASS },
 [BLOCK.KELP]: { name: '海带', solid: false, transparent: true, textures: [173, 173, 173], drops: BLOCK.KELP },
@@ -406,6 +416,7 @@ export const PLACEABLE_BLOCKS = [
   BLOCK.COOKED_PORKCHOP, BLOCK.COOKED_BEEF, BLOCK.COOKED_CHICKEN, BLOCK.COOKED_MUTTON,
   // 枪械/弹药
   BLOCK.PISTOL, BLOCK.ROCKET_LAUNCHER, BLOCK.BULLET_ITEM, BLOCK.ROCKET_AMMO,
+  BLOCK.GATLING, BLOCK.BARRETT, BLOCK.GATLING_AMMO, BLOCK.BARRETT_AMMO,
   // 水生植物
   BLOCK.SEAGRASS, BLOCK.KELP,
 ];
@@ -1667,6 +1678,99 @@ export function generateTextureAtlas(THREE) {
   }
 
   _atlasCanvas = canvas;
+
+  // Tile 174: 加特林（多管机枪图标）
+  clearTile(ctx, 174, 0);
+  // 六根枪管
+  for (let i = 0; i < 6; i++) {
+    const angle = (i / 6) * Math.PI * 2;
+    const cx = 7.5 + Math.cos(angle) * 2;
+    const cy = 7.5 + Math.sin(angle) * 2;
+    for (let y = 2; y <= 10; y++) {
+      setPixel(ctx, 174, 0, Math.round(cx), y, '#555555');
+      setPixel(ctx, 174, 0, Math.round(cx + 1), y, '#666666');
+    }
+  }
+  // 枪身
+  for (let y = 10; y <= 14; y++) {
+    for (let x = 5; x <= 10; x++) {
+      setPixel(ctx, 174, 0, x, y, '#444444');
+    }
+  }
+  // 握把
+  for (let y = 13; y <= 15; y++) {
+    setPixel(ctx, 174, 0, 7, y, '#3a3520');
+    setPixel(ctx, 174, 0, 8, y, '#3a3520');
+  }
+
+  // Tile 175: 巴雷特（狙击步枪图标）
+  clearTile(ctx, 175, 0);
+  // 长枪管
+  for (let x = 1; x <= 13; x++) {
+    setPixel(ctx, 175, 0, x, 6, '#2a2a2a');
+    setPixel(ctx, 175, 0, x, 7, '#333333');
+    setPixel(ctx, 175, 0, x, 8, '#2a2a2a');
+  }
+  // 枪管前端消焰器
+  for (let y = 5; y <= 9; y++) {
+    setPixel(ctx, 175, 0, 1, y, '#1a1a1a');
+    setPixel(ctx, 175, 0, 2, y, '#1a1a1a');
+  }
+  // 瞄准镜
+  for (let x = 7; x <= 11; x++) {
+    setPixel(ctx, 175, 0, x, 4, '#1a1a1a');
+    setPixel(ctx, 175, 0, x, 5, '#222222');
+  }
+  setPixel(ctx, 175, 0, 9, 4, '#444466'); // 镜片反光
+  // 枪身/枪托
+  for (let y = 8; y <= 11; y++) {
+    for (let x = 10; x <= 14; x++) {
+      setPixel(ctx, 175, 0, x, y, '#3a3a2a');
+    }
+  }
+  // 扳机
+  setPixel(ctx, 175, 0, 9, 11, '#222222');
+  setPixel(ctx, 175, 0, 9, 12, '#222222');
+
+  // Tile 176: 加特林子弹（弹链/弹鼓）
+  clearTile(ctx, 176, 0);
+  for (let y = 4; y <= 11; y++) {
+    for (let x = 4; x <= 11; x++) {
+      const n = rand(x, y);
+      let c = n > 0.6 ? '#ccaa44' : n > 0.3 ? '#bb9933' : '#aa8822';
+      setPixel(ctx, 176, 0, x, y, c);
+    }
+  }
+  // 弹头尖端
+  for (let x = 5; x <= 10; x++) {
+    setPixel(ctx, 176, 0, x, 3, '#ddbb55');
+  }
+  // 弹底
+  for (let x = 5; x <= 10; x++) {
+    setPixel(ctx, 176, 0, x, 12, '#886622');
+  }
+
+  // Tile 177: 巴雷特子弹（大型穿甲弹）
+  clearTile(ctx, 177, 0);
+  // 弹头（铜色尖头）
+  for (let y = 3; y <= 7; y++) {
+    const w = Math.min(y - 2, 4);
+    for (let x = 8 - w; x <= 7 + w; x++) {
+      setPixel(ctx, 177, 0, x, y, '#b8860b');
+    }
+  }
+  // 弹壳（黄铜色）
+  for (let y = 7; y <= 12; y++) {
+    for (let x = 4; x <= 11; x++) {
+      const n = rand(x, y);
+      let c = n > 0.5 ? '#daa520' : '#cd9b1d';
+      setPixel(ctx, 177, 0, x, y, c);
+    }
+  }
+  // 弹底
+  for (let x = 4; x <= 11; x++) {
+    setPixel(ctx, 177, 0, x, 13, '#8b7500');
+  }
 
   // Tile 172: 海草（透明背景，绿色叶片）
   clearTile(ctx, 172, 0);

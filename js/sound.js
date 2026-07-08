@@ -224,4 +224,21 @@ export class SoundSystem {
     if (!this.enabled || !this.ctx) return;
     this.sweep(300, 600, 0.2, 'sine', 0.12);
   }
+
+  // 加特林射击（连续哒哒哒）
+  gatling() {
+    if (!this.enabled || !this.ctx) return;
+    // 快速短促的枪声
+    this.noise(0.04, 0.12, 3000);
+    this.tone(180 + Math.random() * 40, 0.03, 'square', 0.08);
+  }
+
+  // 巴雷特狙击枪射击（深沉巨响）
+  sniper() {
+    if (!this.enabled || !this.ctx) return;
+    // 低频爆破 + 高频裂纹
+    this.noise(0.3, 0.35, 800);
+    this.sweep(120, 30, 0.35, 'sawtooth', 0.25);
+    setTimeout(() => this.noise(0.1, 0.15, 4000), 10);
+  }
 }

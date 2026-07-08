@@ -82,9 +82,16 @@ export class World {
     const lz = z - cz * CHUNK_SIZE;
     const result = chunk.setBlock(lx, y, lz, blockId);
 
-    if (recordModification) {
-      this.modifiedBlocks.set(`${x},${y},${z}`, blockId);
-    }
+if (recordModification) {
+const key = `${x},${y},${z}`;
+this.modifiedBlocks.set(key, blockId);
+// 同步更新区块修改索引
+if (!this._chunkModIndex) this._chunkModIndex = new Map();
+const ck = `${cx},${cz}`;
+if (!this._chunkModIndex.has(ck)) this._chunkModIndex.set(ck, []);
+const arr = this._chunkModIndex.get(ck);
+if (!arr.includes(key)) arr.push(key);
+}
 
     // 标记邻居区块为脏（如果方块在边界）
     if (lx === 0) this.markChunkDirty(cx - 1, cz);
@@ -450,14 +457,42 @@ export class World {
     }
   }
 
-  // 应用玩家修改的方块
+  // 应用玩家修改的方块（优化：按区块key索引，避免遍历全部修改）
   applyModifications(chunk) {
     const ox = chunk.cx * CHUNK_SIZE;
     const oz = chunk.cz * CHUNK_SIZE;
-    for (const [key, blockId] of this.modifiedBlocks) {
-      const [x, y, z] = key.split(',').map(Number);
-      if (x >= ox && x < ox + CHUNK_SIZE && z >= oz && z < oz + CHUNK_SIZE && y >= 0 && y < CHUNK_HEIGHT) {
-        chunk.blocks[chunk.index(x - ox, y, z - oz)] = blockId;
+    // 尝试使用区块级索引快速查找
+    const chunkKey = `${chunk.cx},${chunk.cz}`;
+    const mods = this._chunkModIndex?.get(chunkKey);
+    if (mods) {
+      for (const key of mods) {
+        const blockId = this.modifiedBlocks.get(key);
+        if (blockId === undefined) continue;
+        const comma1 = key.indexOf(',');
+        const comma2 = key.indexOf(',', comma1 + 1);
+        const x = parseInt(key.substring(0, comma1));
+        const y = parseInt(key.substring(comma1 + 1, comma2));
+        const z = parseInt(key.substring(comma2 + 1));
+        if (y >= 0 && y < CHUNK_HEIGHT) {
+          chunk.blocks[chunk.index(x - ox, y, z - oz)] = blockId;
+        }
+      }
+    } else {
+      // 首次：全量扫描并建立索引
+      for (const [key, blockId] of this.modifiedBlocks) {
+        const comma1 = key.indexOf(',');
+        const comma2 = key.indexOf(',', comma1 + 1);
+        const x = parseInt(key.substring(0, comma1));
+        const y = parseInt(key.substring(comma1 + 1, comma2));
+        const z = parseInt(key.substring(comma2 + 1));
+        if (x >= ox && x < ox + CHUNK_SIZE && z >= oz && z < oz + CHUNK_SIZE && y >= 0 && y < CHUNK_HEIGHT) {
+          chunk.blocks[chunk.index(x - ox, y, z - oz)] = blockId;
+          // 建立索引
+          if (!this._chunkModIndex) this._chunkModIndex = new Map();
+          const ck = `${chunk.cx},${chunk.cz}`;
+          if (!this._chunkModIndex.has(ck)) this._chunkModIndex.set(ck, []);
+          this._chunkModIndex.get(ck).push(key);
+        }
       }
     }
   }
@@ -480,7 +515,14 @@ export class World {
         dirtyChunks.push(chunk);
       }
     }
-    // 距离排序已在调用方处理，这里直接取前N个
+    // 按距离排序（使用切比雪夫距离，开销小）
+    if (dirtyChunks.length > 1 && this._lastPlayerChunkX !== undefined) {
+      dirtyChunks.sort((a, b) => {
+        const da = Math.max(Math.abs(a.cx - this._lastPlayerChunkX), Math.abs(a.cz - this._lastPlayerChunkZ));
+        const db = Math.max(Math.abs(b.cx - this._lastPlayerChunkX), Math.abs(b.cz - this._lastPlayerChunkZ));
+        return da - db;
+      });
+    }
     for (const chunk of dirtyChunks) {
       if (count >= maxPerFrame) break;
       chunk.buildMesh(scene, this, material, waterMaterial);

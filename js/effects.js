@@ -468,14 +468,20 @@ export class EffectsManager {
       }
     }
 
-    // 屏幕震动
+    // 屏幕震动（仅记录偏移量，由 updateCamera 应用，避免相机位置漂移）
     if (this.screenShake && this.screenShake > 0) {
       this.screenShake -= dt * 2;
-      if (this.game.camera) {
-        this.game.camera.position.x += (Math.random() - 0.5) * this.screenShake * 0.1;
-        this.game.camera.position.y += (Math.random() - 0.5) * this.screenShake * 0.1;
-      }
+      if (this.screenShake < 0) this.screenShake = 0;
     }
+  }
+
+  // 获取屏幕震动偏移量（供 updateCamera 使用）
+  getShakeOffset() {
+    if (!this.screenShake || this.screenShake <= 0) return { x: 0, y: 0 };
+    return {
+      x: (Math.random() - 0.5) * this.screenShake * 0.1,
+      y: (Math.random() - 0.5) * this.screenShake * 0.1,
+    };
   }
 
   clear() {

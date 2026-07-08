@@ -5,7 +5,7 @@
  */
 
 import * as THREE from 'three';
-import { BLOCK } from './blocks.js';
+import { BLOCK, BLOCK_DEFS } from './blocks.js';
 
 // 投射物类型
 export const PROJECTILE_TYPE = {
@@ -26,6 +26,8 @@ export const PROJECTILE_TYPE = {
   WITHER_SKULL: 'wither_skull',
   BULLET: 'bullet',
   ROCKET: 'rocket',
+  GATLING_BULLET: 'gatling_bullet',
+  SNIPER_BULLET: 'sniper_bullet',
 };
 
 // 弹道轨迹颜色
@@ -42,6 +44,8 @@ const TRAIL_COLORS = {
   crossbow_bolt: 0xffcc44,
   bullet: 0xffdd44,
   rocket: 0xff4400,
+  gatling_bullet: 0xffaa00,
+  sniper_bullet: 0x66ffaa,
 };
 
 // ===== 辅助材质函数 =====
@@ -305,6 +309,78 @@ function buildFireworkRocketModel() {
   return g;
 }
 
+/** 加特林子弹模型（小型高速弹） */
+function buildGatlingBulletModel() {
+  const g = new THREE.Group();
+
+  // 弹头（小尖头）
+  const tip = new THREE.Mesh(
+    new THREE.ConeGeometry(0.035, 0.1, 6),
+    mat(0xffaa00)
+  );
+  tip.position.z = 0.08;
+  tip.rotation.x = Math.PI / 2;
+  g.add(tip);
+
+  // 弹体
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.035, 0.035, 0.12, 6),
+    mat(0xcc8800)
+  );
+  body.rotation.x = Math.PI / 2;
+  g.add(body);
+
+  // 尾部微光
+  const glow = new THREE.Mesh(
+    new THREE.SphereGeometry(0.04, 6, 4),
+    mat(0xff6600, { transparent: true, opacity: 0.6 })
+  );
+  glow.position.z = -0.08;
+  g.add(glow);
+
+  return g;
+}
+
+/** 狙击枪子弹模型（大型穿甲弹） */
+function buildSniperBulletModel() {
+  const g = new THREE.Group();
+
+  // 穿甲弹头（铜色尖头）
+  const tip = new THREE.Mesh(
+    new THREE.ConeGeometry(0.06, 0.2, 8),
+    mat(0xb8860b)
+  );
+  tip.position.z = 0.16;
+  tip.rotation.x = Math.PI / 2;
+  g.add(tip);
+
+  // 弹体
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.06, 0.06, 0.25, 8),
+    mat(0xdaa520)
+  );
+  body.rotation.x = Math.PI / 2;
+  g.add(body);
+
+  // 弹底
+  const base = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.065, 0.055, 0.04, 8),
+    mat(0x8b7500)
+  );
+  base.position.z = -0.15;
+  base.rotation.x = Math.PI / 2;
+  g.add(base);
+
+  // 绿色能量光晕（辨识狙击弹）
+  const aura = new THREE.Mesh(
+    new THREE.SphereGeometry(0.08, 8, 6),
+    mat(0x66ffaa, { transparent: true, opacity: 0.3 })
+  );
+  g.add(aura);
+
+  return g;
+}
+
 /** 子弹模型 */
 function buildBulletModel() {
   const g = new THREE.Group();
@@ -492,6 +568,10 @@ export class Projectile {
         return buildBulletModel();
       case PROJECTILE_TYPE.ROCKET:
         return buildRocketModel();
+      case PROJECTILE_TYPE.GATLING_BULLET:
+        return buildGatlingBulletModel();
+      case PROJECTILE_TYPE.SNIPER_BULLET:
+        return buildSniperBulletModel();
       default:
         return new THREE.Group();
     }
@@ -694,6 +774,14 @@ export class Projectile {
           this.game.effects.createBlockBreakParticles(px, py, pz, 0xffdd44);
         }
         break;
+      case PROJECTILE_TYPE.GATLING_BULLET:
+        if (Math.random() < 0.04) {
+          this.game.effects.createBlockBreakParticles(px, py, pz, 0xffaa00);
+        }
+        break;
+      case PROJECTILE_TYPE.SNIPER_BULLET:
+        this.game.effects.createBlockBreakParticles(px, py, pz, 0x66ffaa);
+        break;
       case PROJECTILE_TYPE.ROCKET:
         this.game.effects.createBlockBreakParticles(px, py, pz, 0xff6600);
         this.game.effects.createBlockBreakParticles(px, py, pz, 0xffaa00);
@@ -743,6 +831,33 @@ export class Projectile {
             console.error('[Projectile] BULLET particles error:', e);
           }
         }
+        this.dead = true;
+        break;
+
+      case PROJECTILE_TYPE.GATLING_BULLET:
+        if (this.game.effects) {
+          try {
+            this.game.effects.createBlockBreakParticles(x, y, z, 0xffaa00);
+          } catch (e) { /* 忽略 */ }
+        }
+        // 累积伤害破坏方块
+        this._gatlingDamageBlock(x, y, z);
+        this.dead = true;
+        break;
+
+      case PROJECTILE_TYPE.SNIPER_BULLET:
+        if (this.game.effects) {
+          try {
+            // 狙击弹击中产生大量火花
+            for (let i = 0; i < 8; i++) {
+              this.game.effects.createBlockBreakParticles(x, y, z, 0x66ffaa);
+            }
+            // 额外闪光
+            this.game.effects.createFlash(x + 0.5, y + 0.5, z + 0.5, 2);
+          } catch (e) { /* 忽略 */ }
+        }
+        // 狙击弹范围破坏方块
+        this._sniperDestroyArea(x, y, z);
         this.dead = true;
         break;
 
@@ -928,11 +1043,24 @@ export class Projectile {
       this.game.effects.createExplosion(this.position.x, this.position.y, this.position.z, 4);
     }
 
+    // 狙击弹命中实体产生冲击波粒子
+    if (this.type === PROJECTILE_TYPE.SNIPER_BULLET && this.game.effects) {
+      for (let i = 0; i < 6; i++) {
+        this.game.effects.createBlockBreakParticles(
+          Math.floor(this.position.x), Math.floor(this.position.y), Math.floor(this.position.z), 0x66ffaa
+        );
+      }
+    }
+
     const dx = mob.position.x - this.position.x;
     const dz = mob.position.z - this.position.z;
     const len = Math.sqrt(dx * dx + dz * dz);
     if (len > 0) {
-      const knockback = this.type === PROJECTILE_TYPE.ROCKET ? 8 : (this.type === PROJECTILE_TYPE.BULLET ? 1 : 2);
+      let knockback = 2;
+      if (this.type === PROJECTILE_TYPE.ROCKET) knockback = 8;
+      else if (this.type === PROJECTILE_TYPE.BULLET) knockback = 1;
+      else if (this.type === PROJECTILE_TYPE.GATLING_BULLET) knockback = 1.5;
+      else if (this.type === PROJECTILE_TYPE.SNIPER_BULLET) knockback = 5;
       mob.velocity.x += (dx / len) * knockback;
       mob.velocity.z += (dz / len) * knockback;
       mob.velocity.y = 3;
@@ -966,6 +1094,106 @@ export class Projectile {
           Math.floor(this.position.x), Math.floor(this.position.y), Math.floor(this.position.z), 0xff4400
         );
       }
+    }
+
+    // 加特林子弹飞行轨迹火花 — 大幅降低概率避免连发时卡顿
+    if (this.type === PROJECTILE_TYPE.GATLING_BULLET && this.game.effects) {
+      if (Math.random() < 0.06) {
+        this.game.effects.createBlockBreakParticles(
+          Math.floor(this.position.x), Math.floor(this.position.y), Math.floor(this.position.z), 0xffaa00
+        );
+      }
+    }
+
+    // 狙击弹飞行轨迹光带
+    if (this.type === PROJECTILE_TYPE.SNIPER_BULLET && this.game.effects) {
+      if (Math.random() < 0.5) {
+        this.game.effects.createBlockBreakParticles(
+          Math.floor(this.position.x), Math.floor(this.position.y), Math.floor(this.position.z), 0x66ffaa
+        );
+      }
+    }
+  }
+
+  // 加特林累积伤害破坏方块
+  _gatlingDamageBlock(x, y, z) {
+    if (!this.game.world || !this.game.destroyBlock) return;
+
+    const blockId = this.game.world.getBlock(x, y, z);
+    if (blockId === 0) return;
+
+    // 基岩不可破坏
+    if (blockId === BLOCK.BEDROCK) return;
+
+    // 根据方块硬度决定需要的击中次数
+    const def = BLOCK_DEFS[blockId];
+    let requiredHits = 5; // 默认5发
+    if (def) {
+      if (def.hardness) {
+        requiredHits = Math.ceil(def.hardness / 3);
+      } else if (def.name) {
+        // 软方块（泥土、沙子等）3发
+        if (def.name.includes('泥') || def.name.includes('草') || def.name.includes('沙') ||
+            def.name.includes('雪') || def.name.includes('叶') || def.name.includes('花') ||
+            def.name.includes('木板') || def.name.includes('原木')) {
+          requiredHits = 3;
+        }
+        // 硬方块（石头、矿石等）8发
+        if (def.name.includes('石') || def.name.includes('铁') || def.name.includes('砖') ||
+            def.name.includes('钻') || def.name.includes('绿')) {
+          requiredHits = 8;
+        }
+        // 黑曜石不可破坏
+        if (def.name.includes('黑曜石')) return;
+      }
+    }
+    requiredHits = Math.max(2, Math.min(20, requiredHits));
+
+    const key = `${x},${y},${z}`;
+    const damageMap = this.game._gatlingBlockDamage;
+    const current = damageMap.get(key) || 0;
+    const newDamage = current + 1;
+
+    if (newDamage >= requiredHits) {
+      // 达到阈值，破坏方块
+      this.game.destroyBlock(x, y, z, true);
+      damageMap.delete(key);
+    } else {
+      damageMap.set(key, newDamage);
+      // 清理过期的伤害记录（5秒后自动清除）
+      if (!this.game._gatlingCleanupTimer) {
+        this.game._gatlingCleanupTimer = 0;
+      }
+    }
+  }
+
+  // 巴雷特范围破坏方块（十字形 3x1x3）
+  _sniperDestroyArea(x, y, z) {
+    if (!this.game.world || !this.game.destroyBlock) return;
+
+    // 直接命中的方块
+    this.game.destroyBlock(x, y, z, false);
+
+    // 周围方块（水平十字方向 + 上下各一层），形成小范围破坏
+    const offsets = [
+      [1, 0, 0], [-1, 0, 0],   // 东西
+      [0, 0, 1], [0, 0, -1],   // 南北
+      [0, 1, 0], [0, -1, 0],   // 上下
+      // 对角扩展（形成 3x3x3 去心 = 26格中的部分）
+      [1, 0, 1], [1, 0, -1], [-1, 0, 1], [-1, 0, -1],
+      [1, 1, 0], [-1, 1, 0], [0, 1, 1], [0, 1, -1],
+    ];
+
+    for (const [dx, dy, dz] of offsets) {
+      const bx = x + dx, by = y + dy, bz = z + dz;
+      const blockId = this.game.world.getBlock(bx, by, bz);
+      if (blockId === 0 || blockId === BLOCK.BEDROCK) continue;
+
+      const def = BLOCK_DEFS[blockId];
+      // 黑曜石不被狙击弹破坏
+      if (def && def.name && def.name.includes('黑曜石')) continue;
+
+      this.game.destroyBlock(bx, by, bz, false);
     }
   }
 
@@ -1099,6 +1327,145 @@ export class RangedSystem {
     }
 
     return rocket;
+  }
+
+  // 射击加特林子弹 — 高速连发，带散布
+  shootGatling() {
+    const eye = this.game.player.getEyePosition();
+    const dir = this.game.player.getLookDirection();
+
+    const speed = 100;
+    const damage = 4;
+    const maxLifetime = 8;
+
+    // 加特林散布：随机偏移方向
+    const spread = 0.04;
+    const sDir = {
+      x: dir.x + (Math.random() - 0.5) * spread,
+      y: dir.y + (Math.random() - 0.5) * spread,
+      z: dir.z + (Math.random() - 0.5) * spread,
+    };
+    // 归一化
+    const sLen = Math.sqrt(sDir.x * sDir.x + sDir.y * sDir.y + sDir.z * sDir.z);
+    sDir.x /= sLen; sDir.y /= sLen; sDir.z /= sLen;
+
+    const spawnX = eye.x + sDir.x * 1.0;
+    const spawnY = eye.y + sDir.y * 1.0;
+    const spawnZ = eye.z + sDir.z * 1.0;
+
+    const bullet = new Projectile(this.game, PROJECTILE_TYPE.GATLING_BULLET, spawnX, spawnY, spawnZ, sDir, {
+      speed, damage,
+      owner: this.game.player,
+      maxLifetime,
+      gravity: 0,
+      piercing: 1,
+      spinSpeed: 40,
+    });
+
+    this.projectiles.push(bullet);
+
+    // 枪口火花 — 加特林使用轻量版（无粒子、无光源），避免连发时大量GC和遮挡视线
+    this.createMuzzleFlash(eye, dir, 0xffaa00, 0.05, 0, false);
+
+    if (this.game.sound) this.game.sound.gatling();
+
+    if (this.game.multiplayer) {
+      this.game.multiplayer.sendProjectile(PROJECTILE_TYPE.GATLING_BULLET, eye, sDir, { speed, damage, maxLifetime, gravity: 0, piercing: 1 });
+    }
+
+    return bullet;
+  }
+
+  // 射击巴雷特狙击弹 — 超高速、高伤害、穿透
+  shootSniper() {
+    const eye = this.game.player.getEyePosition();
+    const dir = this.game.player.getLookDirection();
+
+    const speed = 200;
+    const damage = 25;
+    const maxLifetime = 15;
+
+    const spawnX = eye.x + dir.x * 1.0;
+    const spawnY = eye.y + dir.y * 1.0;
+    const spawnZ = eye.z + dir.z * 1.0;
+
+    const bullet = new Projectile(this.game, PROJECTILE_TYPE.SNIPER_BULLET, spawnX, spawnY, spawnZ, dir, {
+      speed, damage,
+      owner: this.game.player,
+      maxLifetime,
+      gravity: 0,
+      piercing: 3, // 穿透多个目标
+      spinSpeed: 20,
+    });
+
+    this.projectiles.push(bullet);
+
+    // 枪口大型闪光
+    this.createMuzzleFlash(eye, dir, 0x66ffaa, 0.15);
+
+    // 屏幕震动
+    if (this.game.effects) {
+      this.game.effects.screenShake = Math.max(this.game.effects.screenShake || 0, 1.5);
+    }
+
+    if (this.game.sound) this.game.sound.sniper();
+
+    if (this.game.multiplayer) {
+      this.game.multiplayer.sendProjectile(PROJECTILE_TYPE.SNIPER_BULLET, eye, dir, { speed, damage, maxLifetime, gravity: 0, piercing: 3 });
+    }
+
+    return bullet;
+  }
+
+  // 枪口闪光特效
+  // particleCount: 粒子数量（0=不生成粒子）  useLight: 是否添加点光源
+  createMuzzleFlash(eye, dir, color, size = 0.08, particleCount = 5, useLight = true) {
+    if (!this.game.effects || !this.game.scene) return;
+
+    const flashPos = {
+      x: eye.x + dir.x * 1.2,
+      y: eye.y + dir.y * 1.2,
+      z: eye.z + dir.z * 1.2,
+    };
+
+    // 闪光球
+    const flashGeom = new THREE.SphereGeometry(size, 8, 6);
+    const flashMat = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.9,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const flash = new THREE.Mesh(flashGeom, flashMat);
+    flash.position.set(flashPos.x, flashPos.y, flashPos.z);
+    flash.frustumCulled = false;
+    this.game.scene.add(flash);
+
+    // 点光源（可选 — 加特林连发时跳过以减少开销）
+    let light = null;
+    if (useLight) {
+      light = new THREE.PointLight(color, 3, 5);
+      light.position.set(flashPos.x, flashPos.y, flashPos.z);
+      this.game.scene.add(light);
+    }
+
+    // 粒子（可选）
+    if (particleCount > 0 && this.game.effects.createBlockBreakParticles) {
+      for (let i = 0; i < particleCount; i++) {
+        this.game.effects.createBlockBreakParticles(
+          Math.floor(flashPos.x), Math.floor(flashPos.y), Math.floor(flashPos.z), color
+        );
+      }
+    }
+
+    // 0.08秒后移除闪光
+    setTimeout(() => {
+      this.game.scene.remove(flash);
+      if (light) this.game.scene.remove(light);
+      flashGeom.dispose();
+      flashMat.dispose();
+    }, 80);
   }
 
   // 投掷物品 — 无限弹药

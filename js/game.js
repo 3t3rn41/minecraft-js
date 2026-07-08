@@ -111,6 +111,17 @@ export class Game {
     this._attackAnimTimer = 0;   // 攻击挥臂动画计时器
     this._bodyYaw = 0;          // 身体朝向（延迟跟随头部）
     this._lastHeldItemId = null; // 上次同步的手持物品ID（避免重复更新）
+
+    // 加特林连发状态
+    this._gatlingFireCooldown = 0; // 加特林射击冷却计时器
+    this._gatlingBarrelSpin = 0;   // 加特林枪管旋转角度
+    this._gatlingIsFiring = false; // 加特林是否正在连发
+    this._gatlingBlockDamage = new Map(); // 加特林方块累积伤害 key=blockKey, val=damage
+
+    // 巴雷特狙击镜状态
+    this._barrettScoped = false;   // 狙击镜是否开启
+    this._barrettFovTransition = 0; // FOV过渡进度 0~1
+    this._normalFov = 75;          // 正常FOV（从settings同步）
   }
 
   async init(loadSave = false, multiplayerMode = null, gamemode = GAMEMODE.SURVIVAL) {
@@ -409,6 +420,18 @@ export class Game {
     this.highlightBox = new THREE.LineSegments(edges, mat);
     this.highlightBox.visible = false;
     this.scene.add(this.highlightBox);
+
+    // 挖掘进度可视化（半透明黑色覆盖层）
+    const mineGeom = new THREE.BoxGeometry(1.01, 1.01, 1.01);
+    const mineMat = new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+    });
+    this.miningOverlay = new THREE.Mesh(mineGeom, mineMat);
+    this.miningOverlay.visible = false;
+    this.scene.add(this.miningOverlay);
   }
 
   // ===== 游戏主循环 =====
@@ -545,6 +568,15 @@ export class Game {
       this.ranged.update(dt);
     }
 
+    // 加特林方块伤害记录定期清理（每5秒清空一次，防止无限增长）
+    this._gatlingCleanupTimer = (this._gatlingCleanupTimer || 0) + dt;
+    if (this._gatlingCleanupTimer > 5) {
+      if (this._gatlingBlockDamage && this._gatlingBlockDamage.size > 0) {
+        this._gatlingBlockDamage.clear();
+      }
+      this._gatlingCleanupTimer = 0;
+    }
+
     // 更新玩家药水效果
     updatePlayerEffects(this.player, dt);
 
@@ -567,7 +599,10 @@ export class Game {
     this.world.updateMeshes(this.scene, this.blockMaterial, this.waterMaterial, meshBudget);
 
     // 更新相机
-    this.updateCamera();
+    this.updateCamera(dt);
+
+    // 更新狙击镜FOV过渡
+    this._updateScopeFov(dt);
 
     // 更新高亮框
     this.updateHighlight();
@@ -590,10 +625,13 @@ export class Game {
       this.heldItemViewModel.update(dt);
     }
 
-    // 更新 UI
+    // 更新 UI（限制 DOM 更新频率，每3帧更新一次状态栏和信息，减少布局抖动）
     this.ui.updateHotbar();
-    this.ui.updateStatusBars();
-    this.ui.updateInfo(this.fps, this.player.position, this.sky.getTimeString());
+    this._uiUpdateCounter = (this._uiUpdateCounter || 0) + 1;
+    if (this._uiUpdateCounter % 3 === 0) {
+      this.ui.updateStatusBars();
+      this.ui.updateInfo(this.fps, this.player.position, this.sky.getTimeString());
+    }
 
     // 清除单次按键
     this.input.clearJustPressed();
@@ -686,8 +724,36 @@ export class Game {
       // 远程武器：左键射击，不挖掘
       this.miningTarget = null;
       this.miningProgress = 0;
-      if (this.input.consumeLeftClick()) {
-        this.useRangedWeapon(heldItem.id);
+
+      // 加特林：按住左键连发
+      if (heldItem.id === BLOCK.GATLING) {
+        if (this.input.mouseButtons.left) {
+          this._gatlingIsFiring = true;
+          if (this._gatlingFireCooldown <= 0) {
+            this.useRangedWeapon(heldItem.id);
+            this._gatlingFireCooldown = 0.08; // 每发间隔80ms
+          }
+        } else {
+          this._gatlingIsFiring = false;
+        }
+      } else {
+        this._gatlingIsFiring = false;
+        if (this.input.consumeLeftClick()) {
+          this.useRangedWeapon(heldItem.id);
+        }
+      }
+
+      // 加特林枪管旋转动画
+      if (this._gatlingIsFiring) {
+        this._gatlingBarrelSpin += dt * 30; // 快速旋转
+      } else if (this._gatlingBarrelSpin > 0) {
+        this._gatlingBarrelSpin += dt * 10; // 减速旋转
+        if (this._gatlingBarrelSpin > 100) this._gatlingBarrelSpin = 0; // 重置避免溢出
+      }
+
+      // 加特林冷却递减
+      if (this._gatlingFireCooldown > 0) {
+        this._gatlingFireCooldown -= dt;
       }
     } else {
       // 挖掘方块（左键持续）—— PC端和移动端共用
@@ -696,12 +762,18 @@ export class Game {
       } else {
         this.miningTarget = null;
         this.miningProgress = 0;
+        if (this.miningOverlay) this.miningOverlay.visible = false;
       }
     }
 
     // 放置方块（右键单击）—— PC端和移动端共用
     if (this.input.consumeRightClick()) {
-      this.placeBlock();
+      // 巴雷特右键开镜/关镜
+      if (heldItem && heldItem.id === BLOCK.BARRETT) {
+        this.toggleBarrettScope();
+      } else {
+        this.placeBlock();
+      }
     }
 
     // 攻击生物（左键单击）—— PC端
@@ -764,12 +836,20 @@ export class Game {
     }
   }
 
-  updateCamera() {
+  updateCamera(dt) {
     const eye = this.player.getEyePosition();
+
+    // 屏幕震动偏移
+    let shakeX = 0, shakeY = 0;
+    if (this.effects && this.effects.screenShake > 0) {
+      const shake = this.effects.getShakeOffset();
+      shakeX = shake.x;
+      shakeY = shake.y;
+    }
 
     if (this.cameraMode === 0) {
       // 第一人称
-      this.camera.position.set(eye.x, eye.y, eye.z);
+      this.camera.position.set(eye.x + shakeX, eye.y + shakeY, eye.z);
       this.camera.rotation.order = 'YXZ';
       this.camera.rotation.y = this.player.yaw;
       this.camera.rotation.x = this.player.pitch;
@@ -816,7 +896,7 @@ export class Game {
         }
       }
 
-      this.camera.position.set(camX, camY, camZ);
+      this.camera.position.set(camX + shakeX, camY + shakeY, camZ);
       this.camera.rotation.order = 'YXZ';
       this.camera.rotation.y = this.player.yaw;
       this.camera.rotation.x = this.player.pitch;
@@ -866,7 +946,7 @@ export class Game {
         this.localPlayerModel.head.rotation.x = -this.player.pitch;
       }
 
-      this.localPlayerModel.updateAnimation(0.016, {
+      this.localPlayerModel.updateAnimation(dt, {
         moving: isMoving,
         sprinting: this.player.sprinting,
         sneaking: this.player.sneaking,
@@ -876,7 +956,7 @@ export class Game {
 
     // 攻击动画计时器递减
     if (this._attackAnimTimer > 0) {
-      this._attackAnimTimer -= 0.016;
+      this._attackAnimTimer -= dt;
     }
   }
 
@@ -888,6 +968,19 @@ export class Game {
     // 仅在物品变化时更新模型
     if (itemId === this._lastHeldItemId) return;
     this._lastHeldItemId = itemId;
+
+    // 切换武器时关闭巴雷特狙击镜
+    if (this._barrettScoped && itemId !== BLOCK.BARRETT) {
+      this._barrettScoped = false;
+      this._barrettFovTransition = 0;
+      const scopeEl = document.getElementById('sniper-scope');
+      if (scopeEl) scopeEl.classList.add('hidden');
+    }
+
+    // 切换武器时停止加特林连发
+    if (itemId !== BLOCK.GATLING) {
+      this._gatlingIsFiring = false;
+    }
 
     const atlasTexture = this.blockMaterial ? this.blockMaterial.map : null;
     const toolData = this.player.toolData || {};
@@ -962,6 +1055,14 @@ export class Game {
         // 火箭筒近战：近身不推荐
         reach = 2.5;
         damage = 3;
+      } else if (item.id === BLOCK.GATLING) {
+        // 加特林近战：重型枪身砸击
+        reach = 2.0;
+        damage = 3;
+      } else if (item.id === BLOCK.BARRETT) {
+        // 巴雷特近战：枪托猛击
+        reach = 2.0;
+        damage = 4;
       } else if (item.id === BLOCK.FISHING_ROD) {
         reach = 2.5;
         damage = 1;
@@ -1033,6 +1134,10 @@ export class Game {
     const pz = Math.floor(this.player.position.z / CHUNK_SIZE);
     const rd = this.settings.renderDistance;
 
+    // 记录玩家区块坐标供 world.updateMeshes 排序使用
+    this.world._lastPlayerChunkX = px;
+    this.world._lastPlayerChunkZ = pz;
+
     // 加载新区块（只加载当前帧需要的，避免一次加载太多）
     let loadedThisFrame = 0;
     const maxLoadPerFrame = 2;
@@ -1075,12 +1180,14 @@ export class Game {
   }
 
   // ===== 设置游戏模式 =====
-  setGamemode(mode) {
+  setGamemode(mode, skipSync = false) {
     this.gamemode = mode;
     this.player.setGamemode(mode);
     if (this.ui) this.ui.showToast(`游戏模式: ${GAMEMODE_NAMES[mode]}`);
+    // 更新背包面板可见性（体验模式）
+    if (this.ui) this.ui.updateExperiencePanelVisibility();
     // 多人同步
-    if (this.multiplayer) {
+    if (this.multiplayer && !skipSync) {
       this.multiplayer.sendGamemodeChange(mode);
     }
   }
@@ -1090,6 +1197,7 @@ export class Game {
     if (!this.currentRaycastHit) {
       this.miningTarget = null;
       this.miningProgress = 0;
+      if (this.miningOverlay) this.miningOverlay.visible = false;
       return;
     }
 
@@ -1103,13 +1211,17 @@ export class Game {
 
     // 挖掘速度取决于方块类型
     const def = BLOCK_DEFS[hit.blockId];
-    if (def && def.name === '基岩' && !this.player.godMode) return;
+    if (def && def.name === '基岩' && !this.player.godMode) {
+      if (this.miningOverlay) this.miningOverlay.visible = false;
+      return;
+    }
 
     // 创造模式瞬间破坏
     if (this.player.canBreakInstantly()) {
       this.breakBlock(hit.x, hit.y, hit.z);
       this.miningProgress = 0;
       this.miningTarget = null;
+      if (this.miningOverlay) this.miningOverlay.visible = false;
       return;
     }
 
@@ -1124,10 +1236,20 @@ export class Game {
     }
 
     this.miningProgress += dt;
+
+    // 挖掘进度可视化
+    if (this.miningOverlay && mineTime > 0 && mineTime !== Infinity) {
+      const progress = Math.min(1, this.miningProgress / mineTime);
+      this.miningOverlay.visible = true;
+      this.miningOverlay.position.set(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5);
+      this.miningOverlay.material.opacity = progress * 0.4;
+    }
+
     if (this.miningProgress >= mineTime) {
       this.breakBlock(hit.x, hit.y, hit.z);
       this.miningProgress = 0;
       this.miningTarget = null;
+      if (this.miningOverlay) this.miningOverlay.visible = false;
     }
   }
 
@@ -1247,6 +1369,39 @@ export class Game {
     // 这里可以添加挖掘裂纹效果
   }
 
+  // 武器破坏方块的辅助方法（含掉落物、特效、多人同步）
+  // skipDrops: 创造模式/远程武器可跳过掉落物
+  destroyBlock(x, y, z, skipDrops = false) {
+    const blockId = this.world.getBlock(x, y, z);
+    if (blockId === 0 || blockId === BLOCK.BEDROCK) return false;
+
+    const def = BLOCK_DEFS[blockId];
+    if (!def) return false;
+
+    // 红石/农耕通知
+    if (this.redstone) this.redstone.onBlockChange(x, y, z, blockId, BLOCK.AIR);
+    if (this.farming) this.farming.onBlockBreak(x, y, z, blockId);
+
+    // 删除方块
+    this.world.setBlock(x, y, z, BLOCK.AIR);
+
+    // 音效
+    if (this.sound) this.sound.break(blockId);
+
+    // 掉落物
+    if (!skipDrops && def.drops !== null && def.drops !== undefined && !this.player.gamemodeConfig.infiniteBlocks) {
+      this.mobs.spawnDrop(x + 0.5, y + 0.5, z + 0.5, def.drops, 1);
+    }
+
+    // 破坏特效
+    if (this.effects) this.effects.createBlockBreakParticles(x, y, z, blockId);
+
+    // 多人同步
+    if (this.multiplayer) this.multiplayer.sendBlockChange(x, y, z, BLOCK.AIR);
+
+    return true;
+  }
+
   breakBlock(x, y, z) {
     const blockId = this.world.getBlock(x, y, z);
     if (blockId === 0 || blockId === BLOCK.BEDROCK) return;
@@ -1301,6 +1456,7 @@ export class Game {
   _isRangedWeapon(blockId) {
     return blockId === BLOCK.BOW || blockId === BLOCK.CROSSBOW || blockId === BLOCK.TRIDENT ||
       blockId === BLOCK.PISTOL || blockId === BLOCK.ROCKET_LAUNCHER ||
+      blockId === BLOCK.GATLING || blockId === BLOCK.BARRETT ||
       blockId === BLOCK.SNOWBALL || blockId === BLOCK.EGG_ITEM ||
       blockId === BLOCK.ENDER_PEARL || blockId === BLOCK.FIREWORK_ROCKET;
   }
@@ -1333,6 +1489,10 @@ export class Game {
       if (this.ranged) this.ranged.throwItem(PROJECTILE_TYPE.FIREWORK_ROCKET, { damage: 0, gravity: 0.3, maxLifetime: 20 });
       if (this.heldItemViewModel) this.heldItemViewModel.triggerSwing();
       this._attackAnimTimer = 0.2;
+    } else if (blockId === BLOCK.GATLING) {
+      this.useGatling();
+    } else if (blockId === BLOCK.BARRETT) {
+      this.useBarrett();
     }
   }
 
@@ -1341,7 +1501,8 @@ export class Game {
     const blockId = item ? item.id : 0;
 
     // 远程武器已改为左键射击，右键不再触发武器
-    // 如果手持远程武器右键，不做任何事
+    // 巴雷特右键开镜逻辑在 handleInput 中处理
+    // 其他远程武器右键不做任何事
     if (this._isRangedWeapon(blockId)) return;
 
     // ===== 以下为普通方块放置逻辑 =====
@@ -1536,6 +1697,70 @@ this.ranged.shootBullet();
     this._attackAnimTimer = 0.5;
 
     this.ranged.shootRocket();
+  }
+
+  // 使用加特林 — 无限子弹，连发
+  useGatling() {
+    if (!this.ranged) return;
+
+    if (this.heldItemViewModel) this.heldItemViewModel.triggerSwing();
+    this._attackAnimTimer = 0.05;
+
+    this.ranged.shootGatling();
+  }
+
+  // 使用巴雷特 — 无限子弹，高伤害
+  useBarrett() {
+    if (!this.ranged) return;
+
+    if (this.heldItemViewModel) this.heldItemViewModel.triggerSwing();
+    this._attackAnimTimer = 0.4;
+
+    this.ranged.shootSniper();
+  }
+
+  // 切换巴雷特狙击镜
+  toggleBarrettScope() {
+    this._barrettScoped = !this._barrettScoped;
+    this._barrettFovTransition = 0; // 重置过渡进度
+
+    // 显示/隐藏狙击镜UI
+    const scopeEl = document.getElementById('sniper-scope');
+    if (scopeEl) {
+      scopeEl.classList.toggle('hidden', !this._barrettScoped);
+    }
+
+    if (this.ui) {
+      this.ui.showToast(this._barrettScoped ? '狙击镜: 开启' : '狙击镜: 关闭', 600);
+    }
+  }
+
+  // 更新狙击镜FOV过渡
+  _updateScopeFov(dt) {
+    if (!this.camera) return;
+
+    this._normalFov = this.settings.fov;
+    const scopeFov = 20; // 狙击镜FOV
+
+    if (this._barrettScoped) {
+      // 开镜过渡
+      this._barrettFovTransition = Math.min(1, this._barrettFovTransition + dt * 4);
+    } else {
+      // 关镜过渡
+      this._barrettFovTransition = Math.max(0, this._barrettFovTransition - dt * 4);
+    }
+
+    const targetFov = this._normalFov + (scopeFov - this._normalFov) * this._barrettFovTransition;
+    if (Math.abs(this.camera.fov - targetFov) > 0.1) {
+      this.camera.fov = targetFov;
+      this.camera.updateProjectionMatrix();
+    }
+
+    // 如果过渡完成且未开镜，确保FOV完全恢复
+    if (!this._barrettScoped && this._barrettFovTransition <= 0) {
+      this.camera.fov = this._normalFov;
+      this.camera.updateProjectionMatrix();
+    }
   }
 
   // ===== 设置 =====

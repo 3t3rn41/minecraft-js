@@ -503,10 +503,14 @@ async function enterMultiplayerHostGame() {
   document.getElementById('game-container').classList.remove('hidden');
   document.getElementById('loading-overlay').classList.remove('hidden');
 
+  // 读取主机选择的游戏模式
+  const gmSelect = document.getElementById('mp-host-gamemode');
+  const hostGamemode = gmSelect ? parseInt(gmSelect.value) : GAMEMODE.SURVIVAL;
+
   game = new Game();
   game.settings = getSettingsFromUI();
   game.roomDiscovery = roomDiscovery; // 传递给游戏，用于人数更新和退出时清理
-  await game.init(false, 'multiplayer', GAMEMODE.SURVIVAL);
+  await game.init(false, 'multiplayer', hostGamemode);
 
   // 使用已有的 Peer 连接和待处理的客户端连接
   const roomId = await game.multiplayer.hostRoom(pendingPeer, pendingRoomId, pendingConnections);

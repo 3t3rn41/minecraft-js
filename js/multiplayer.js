@@ -285,6 +285,10 @@ export class Multiplayer {
           rp.gamemode = data.gamemode;
           this.updateRemotePlayerMesh(rp);
         }
+        // 主机切换模式时，客户端同步切换自身模式（skipSync 避免重复广播）
+        if (data.hostSync && !this.isHost) {
+          this.game.setGamemode(data.gamemode, true);
+        }
         break;
 
       case 'weather_change':
@@ -340,7 +344,21 @@ export class Multiplayer {
           attacker.attackAnimTimer = 0.3;
         }
         if (data.targetId === this.playerId) {
-          this.game.player.takeDamage(data.damage);
+          // 受到 PvP 攻击
+          this.game.player.takeDamage(data.damage, 'pvp');
+          // 击退效果
+          if (data.knockback) {
+            const kb = data.knockback;
+            this.game.player.velocity.x += kb.x;
+            this.game.player.velocity.y += kb.y;
+            this.game.player.velocity.z += kb.z;
+          }
+          // 伤害闪屏
+          const overlay = document.getElementById('damage-overlay');
+          if (overlay) {
+            overlay.classList.add('flash');
+            setTimeout(() => overlay.classList.remove('flash'), 200);
+          }
           if (this.game.effects) {
             this.game.effects.showDamageNumber(
               this.game.player.position.x,
@@ -408,8 +426,8 @@ export class Multiplayer {
           this.game.weather.setWeather(data.weather, data.weatherDuration || 120);
         }
         if (data.gamemode !== undefined) {
-          // 主机指定的游戏模式
-          this.game.setGamemode(data.gamemode);
+          // 主机指定的游戏模式（skipSync 避免重复广播）
+          this.game.setGamemode(data.gamemode, true);
         }
         if (data.difficulty !== undefined) {
           this.game.difficulty = data.difficulty;
@@ -449,9 +467,9 @@ export class Multiplayer {
         break;
 
       case 'player_damage':
-        // 远程玩家受到伤害
+        // 远程玩家受到伤害（投射物命中）
         if (data.targetId === this.playerId) {
-          this.game.player.takeDamage(data.damage);
+          this.game.player.takeDamage(data.damage, 'pvp');
           if (this.game.effects) {
             this.game.effects.showDamageNumber(
               this.game.player.position.x,
@@ -788,10 +806,10 @@ export class Multiplayer {
     this.sendToAll({ type: 'explosion', x, y, z, power });
   }
 
-  // 发送游戏模式切换
+  // 发送游戏模式切换（主机切换时带 hostSync 标记，客户端同步跟随）
   sendGamemodeChange(gamemode) {
     if (!this.isConnected) return;
-    this.sendToAll({ type: 'gamemode_change', name: this.playerName, playerId: this.playerId, gamemode });
+    this.sendToAll({ type: 'gamemode_change', name: this.playerName, playerId: this.playerId, gamemode, hostSync: this.isHost });
   }
 
   // 发送天气变化
@@ -831,9 +849,27 @@ export class Multiplayer {
   }
 
   // 发送 PvP 攻击
-  sendPlayerAttack(targetId, damage) {
+  sendPlayerAttack(targetId, damage, attackerPos, targetPos) {
     if (!this.isConnected) return;
-    this.sendToAll({ type: 'player_attack', targetId, damage });
+    // 计算击退方向
+    let knockback = null;
+    if (attackerPos && targetPos) {
+      const dx = targetPos.x - attackerPos.x;
+      const dz = targetPos.z - attackerPos.z;
+      const len = Math.max(0.001, Math.sqrt(dx * dx + dz * dz));
+      knockback = {
+        x: (dx / len) * 4,
+        y: 3,
+        z: (dz / len) * 4,
+      };
+    }
+    this.sendToAll({
+      type: 'player_attack',
+      attackerId: this.playerId,
+      targetId,
+      damage,
+      knockback,
+    });
   }
 
   // 发送伤害数字（供其他玩家看到）
@@ -880,34 +916,49 @@ export class Multiplayer {
 
   // 尝试攻击附近的远程玩家（PvP）
   tryAttackRemotePlayers(player, reach = 2.5, damage = 1) {
-    if (!this.isConnected) return;
+    if (!this.isConnected) return false;
     const eyePos = player.getEyePosition();
     const dir = player.getLookDirection();
+    // 扩大检测范围，使 PvP 更容易命中
+    const pvpReach = Math.max(reach, 3.5);
 
     for (const [peerId, rp] of this.remotePlayers) {
       // 旁观/创造模式不可被攻击
-      if (rp.gamemode === 3) continue;
+      if (rp.gamemode === 3 || rp.gamemode === 1) continue;
 
       const dx = rp.position.x - eyePos.x;
       const dy = (rp.position.y + 0.9) - eyePos.y; // 身体中心
       const dz = rp.position.z - eyePos.z;
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
-      if (dist < reach) {
-        // 检查是否在视线方向上
+      if (dist < pvpReach) {
+        // 检查是否在视线方向上（放宽角度要求）
         const len = Math.max(0.001, dist);
         const dot = (dx * dir.x + dy * dir.y + dz * dir.z) / len;
-        if (dot > 0.5) {
-          // 命中！发送攻击消息
+        if (dot > 0.3) {
+          // 命中！发送攻击消息（含击退方向）
+          const kdx = rp.position.x - player.position.x;
+          const kdz = rp.position.z - player.position.z;
+          const klen = Math.max(0.001, Math.sqrt(kdx * kdx + kdz * kdz));
+          const knockback = {
+            x: (kdx / klen) * 4,
+            y: 3,
+            z: (kdz / klen) * 4,
+          };
           this.sendToAll({
             type: 'player_attack',
             attackerId: this.playerId,
             targetId: peerId,
             damage: damage,
+            knockback,
           });
           // 显示伤害数字
           if (this.game.effects) {
             this.game.effects.showDamageNumber(rp.position.x, rp.position.y + 1, rp.position.z, damage);
+          }
+          // 攻击音效
+          if (this.game.sound) {
+            this.game.sound.attack();
           }
           return true;
         }

@@ -428,7 +428,7 @@ box-sizing: border-box;
   bottom: 20px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 10;
+  z-index: 25;
 }
 
 .hotbar-slots {
@@ -567,6 +567,85 @@ box-sizing: border-box;
   width: 520px;
   max-height: 85vh;
   overflow-y: auto;
+  position: relative;
+}
+
+/* 右上角关闭按钮 */
+.inv-close-corner {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(180, 60, 60, 0.8);
+  border: 2px solid #833;
+  color: #fff;
+  font-size: 18px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  touch-action: manipulation;
+}
+
+.inv-close-corner:hover {
+  background: rgba(220, 80, 80, 0.9);
+}
+
+/* 护甲栏 */
+.armor-section {
+  margin-bottom: 8px;
+}
+
+.armor-slots {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  margin: 6px 0;
+}
+
+.armor-slot {
+  width: 48px;
+  height: 48px;
+  background: rgba(80, 60, 60, 0.5);
+  border: 2px solid #655;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  cursor: pointer;
+  font-size: 10px;
+  color: #888;
+  text-align: center;
+}
+
+.armor-slot:hover {
+  border-color: #aaa;
+  background: rgba(100, 80, 80, 0.6);
+}
+
+.armor-slot.equipped {
+  border-color: #4a9;
+  background: rgba(40, 80, 60, 0.5);
+}
+
+.armor-slot img {
+  width: 32px;
+  height: 32px;
+  image-rendering: pixelated;
+}
+
+/* 操作提示 */
+.inv-hint {
+  font-size: 11px;
+  color: #888;
+  text-align: center;
+  margin: 4px 0 8px;
+  line-height: 1.4;
 }
 
 .inventory-panel h2 {
@@ -883,17 +962,18 @@ box-sizing: border-box;
 
 /* ===== Toast消息 ===== */
 #toast-message {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  color: #fff;
-  font-size: 18px;
-  text-shadow: 2px 2px 4px #000;
-  z-index: 20;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.3s ease;
+position: fixed;
+top: 20px;
+right: 20px;
+color: #fff;
+font-size: 16px;
+text-shadow: 2px 2px 4px #000;
+z-index: 100;
+pointer-events: none;
+opacity: 0;
+transition: opacity 0.3s ease;
+max-width: 300px;
+text-align: right;
 }
 
 #toast-message.show {
@@ -925,6 +1005,12 @@ box-sizing: border-box;
   gap: 12px;
   margin: 20px 0;
   max-width: 700px;
+}
+
+/* 暂停菜单中的游戏模式面板加宽 */
+#pause-gamemode .menu-panel {
+  max-width: 760px;
+  width: 90vw;
 }
 
 .gamemode-card {
@@ -1364,6 +1450,23 @@ body.mobile #mobile-controls {
     height: 26px;
   }
 
+  /* 护甲槽位移动端适配 */
+  .armor-slot {
+    width: 38px;
+    height: 38px;
+  }
+
+  .armor-slot img {
+    width: 26px;
+    height: 26px;
+  }
+
+  .inv-close-corner {
+    width: 32px;
+    height: 32px;
+    font-size: 16px;
+  }
+
   /* 聊天框 */
   #chat-box {
     width: 280px;
@@ -1555,4 +1658,47 @@ body.mobile #crosshair {
     width: 42px;
     height: 42px;
   }
+}
+
+/* ===== 巴雷特狙击镜遮罩 ===== */
+#sniper-scope {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 50;
+  pointer-events: none;
+  /* 圆形透明区域 + 外部黑色遮罩 */
+  background: radial-gradient(
+    circle at center,
+    transparent 0%,
+    transparent 28%,
+    rgba(0, 0, 0, 0.4) 30%,
+    rgba(0, 0, 0, 0.95) 33%,
+    #000 36%
+  );
+}
+
+/* 狙击镜十字线 */
+#sniper-scope::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: 1px;
+  background: rgba(0, 0, 0, 0.7);
+  box-shadow: 0 0 2px rgba(255, 255, 255, 0.3);
+}
+
+#sniper-scope::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 1px;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.7);
+  box-shadow: 0 0 2px rgba(255, 255, 255, 0.3);
 }

@@ -163,7 +163,7 @@ class Entity {
     this.velocity.z = 0;
     this.updatePhysics(dt);
     if (this.mesh) {
-      this.mesh.position.copy(new THREE.Vector3(this.position.x, this.position.y, this.position.z));
+      this.mesh.position.set(this.position.x, this.position.y, this.position.z);
       // 倒地旋转动画（0.5秒内倒地）
       const fallProgress = Math.min(1, (2.0 - this.deathTimer) / 0.5);
       this.mesh.rotation.z = fallProgress * (Math.PI / 2);
@@ -290,7 +290,7 @@ class Pig extends Entity {
 
     // 避开玩家
     const distToPlayer = this.distanceTo(player.position.x, player.position.y, player.position.z);
-    if (distToPlayer < 2 && player.velocity.x !== 0 || player.velocity.z !== 0) {
+    if (distToPlayer < 2 && (player.velocity.x !== 0 || player.velocity.z !== 0)) {
       // 逃跑
       const dx = this.position.x - player.position.x;
       const dz = this.position.z - player.position.z;
@@ -305,7 +305,7 @@ class Pig extends Entity {
 
     // 更新网格
     if (this.mesh) {
-      this.mesh.position.copy(new THREE.Vector3(this.position.x, this.position.y, this.position.z));
+      this.mesh.position.set(this.position.x, this.position.y, this.position.z);
       this.mesh.rotation.y = this.yaw;
 
       // 腿部摆动动画
@@ -443,7 +443,7 @@ class Zombie extends Entity {
 
     // 更新网格
     if (this.mesh) {
-      this.mesh.position.copy(new THREE.Vector3(this.position.x, this.position.y, this.position.z));
+      this.mesh.position.set(this.position.x, this.position.y, this.position.z);
       this.mesh.rotation.y = this.yaw;
 
       // 行走动画
@@ -736,7 +736,7 @@ class Creeper extends Entity {
     this.updatePhysics(dt);
 
     if (this.mesh) {
-      this.mesh.position.copy(new THREE.Vector3(this.position.x, this.position.y, this.position.z));
+      this.mesh.position.set(this.position.x, this.position.y, this.position.z);
       this.mesh.rotation.y = this.yaw;
       if (Math.abs(this.velocity.x) > 0.1 || Math.abs(this.velocity.z) > 0.1) {
         const t = Date.now() * 0.006;
@@ -871,7 +871,7 @@ class Skeleton extends Entity {
     this.updatePhysics(dt);
 
     if (this.mesh) {
-      this.mesh.position.copy(new THREE.Vector3(this.position.x, this.position.y, this.position.z));
+      this.mesh.position.set(this.position.x, this.position.y, this.position.z);
       this.mesh.rotation.y = this.yaw;
       if (Math.abs(this.velocity.x) > 0.1 || Math.abs(this.velocity.z) > 0.1) {
         const t = Date.now() * 0.006;
@@ -963,7 +963,7 @@ class Cow extends Entity {
     }
     this.updatePhysics(dt);
     if (this.mesh) {
-      this.mesh.position.copy(new THREE.Vector3(this.position.x, this.position.y, this.position.z));
+      this.mesh.position.set(this.position.x, this.position.y, this.position.z);
       this.mesh.rotation.y = this.yaw;
       if (Math.abs(this.velocity.x) > 0.1 || Math.abs(this.velocity.z) > 0.1) {
         const t = Date.now() * 0.006;
@@ -1041,7 +1041,7 @@ class Sheep extends Entity {
     }
     this.updatePhysics(dt);
     if (this.mesh) {
-      this.mesh.position.copy(new THREE.Vector3(this.position.x, this.position.y, this.position.z));
+      this.mesh.position.set(this.position.x, this.position.y, this.position.z);
       this.mesh.rotation.y = this.yaw;
       if (Math.abs(this.velocity.x) > 0.1 || Math.abs(this.velocity.z) > 0.1) {
         const t = Date.now() * 0.008;
@@ -1126,7 +1126,7 @@ class Chicken extends Entity {
     this.velocity.z = this.wanderDir.z;
     this.updatePhysics(dt);
     if (this.mesh) {
-      this.mesh.position.copy(new THREE.Vector3(this.position.x, this.position.y, this.position.z));
+      this.mesh.position.set(this.position.x, this.position.y, this.position.z);
       this.mesh.rotation.y = this.yaw;
       this.flapTimer += dt;
       if (!this.onGround || Math.abs(this.velocity.x) > 0.1) {
@@ -1228,7 +1228,7 @@ class Spider extends Entity {
     this.updatePhysics(dt);
 
     if (this.mesh) {
-      this.mesh.position.copy(new THREE.Vector3(this.position.x, this.position.y, this.position.z));
+      this.mesh.position.set(this.position.x, this.position.y, this.position.z);
       this.mesh.rotation.y = this.yaw;
       if (Math.abs(this.velocity.x) > 0.1 || Math.abs(this.velocity.z) > 0.1) {
         const t = Date.now() * 0.012;
@@ -1371,7 +1371,7 @@ class Enderman extends Entity {
 
     this.updatePhysics(dt);
     if (this.mesh) {
-      this.mesh.position.copy(new THREE.Vector3(this.position.x, this.position.y, this.position.z));
+      this.mesh.position.set(this.position.x, this.position.y, this.position.z);
       this.mesh.rotation.y = this.yaw;
       // 手臂前伸（攻击姿态）
       if (this.aggro && this.arms) {
@@ -1460,7 +1460,7 @@ class Slime extends Entity {
     this.updatePhysics(dt);
 
     if (this.mesh) {
-      this.mesh.position.copy(new THREE.Vector3(this.position.x, this.position.y, this.position.z));
+      this.mesh.position.set(this.position.x, this.position.y, this.position.z);
       this.mesh.rotation.y = this.yaw;
       // 弹跳压缩动画
       if (this.bodyMesh) {
@@ -1604,7 +1604,7 @@ class IronGolem extends Entity {
 
     this.updatePhysics(dt);
     if (this.mesh) {
-      this.mesh.position.copy(new THREE.Vector3(this.position.x, this.position.y, this.position.z));
+      this.mesh.position.set(this.position.x, this.position.y, this.position.z);
       this.mesh.rotation.y = this.yaw;
       if (Math.abs(this.velocity.x) > 0.1 || Math.abs(this.velocity.z) > 0.1) {
         const t = Date.now() * 0.004;
@@ -1742,7 +1742,7 @@ class WitherBoss extends Entity {
     this.position.z += this.velocity.z * dt;
 
     if (this.mesh) {
-      this.mesh.position.copy(new THREE.Vector3(this.position.x, this.position.y, this.position.z));
+      this.mesh.position.set(this.position.x, this.position.y, this.position.z);
       this.mesh.rotation.y = this.yaw;
       // 头部转动
       for (let i = 0; i < this.heads.length; i++) {
@@ -1884,7 +1884,7 @@ class EnderDragon extends Entity {
     this.position.z += this.velocity.z * dt;
 
     if (this.mesh) {
-      this.mesh.position.copy(new THREE.Vector3(this.position.x, this.position.y, this.position.z));
+      this.mesh.position.set(this.position.x, this.position.y, this.position.z);
       this.mesh.rotation.y = this.yaw;
       // 翅膀拍动
       if (this.wings) {
@@ -2052,7 +2052,7 @@ class Fish extends Entity {
 
     // 更新网格
     if (this.mesh) {
-      this.mesh.position.copy(new THREE.Vector3(this.position.x, this.position.y, this.position.z));
+      this.mesh.position.set(this.position.x, this.position.y, this.position.z);
       this.mesh.rotation.y = this.yaw;
     }
     this.updateHurtFlash(dt);
@@ -2154,7 +2154,10 @@ export class MobManager {
       // 移除远离的生物
       const dist = mob.distanceTo(player.position.x, player.position.y, player.position.z);
       if (dist > 80) {
-        if (mob.mesh) this.game.scene.remove(mob.mesh);
+        if (mob.mesh) {
+          this.game.scene.remove(mob.mesh);
+          this._disposeMobMesh(mob);
+        }
         this.mobs.splice(i, 1);
         continue;
       }
@@ -2166,7 +2169,10 @@ export class MobManager {
         for (const drop of drops) {
           this.spawnDrop(mob.position.x, mob.position.y, mob.position.z, drop.id, drop.count);
         }
-        if (mob.mesh) this.game.scene.remove(mob.mesh);
+        if (mob.mesh) {
+          this.game.scene.remove(mob.mesh);
+          this._disposeMobMesh(mob);
+        }
         this.mobs.splice(i, 1);
         continue;
       }
@@ -2182,7 +2188,14 @@ export class MobManager {
         drop.dead = true;
       }
       if (drop.dead) {
-        if (drop.mesh) this.game.scene.remove(drop.mesh);
+        if (drop.mesh) {
+          this.game.scene.remove(drop.mesh);
+          if (drop.mesh.geometry) drop.mesh.geometry.dispose();
+          if (drop.mesh.material) {
+            if (Array.isArray(drop.mesh.material)) drop.mesh.material.forEach(m => m.dispose());
+            else drop.mesh.material.dispose();
+          }
+        }
         this.drops.splice(i, 1);
         // 拾取提示
         if (drop.pickedUp && this.game.ui) {
@@ -2300,13 +2313,35 @@ export class MobManager {
 
   clear() {
     for (const mob of this.mobs) {
-      if (mob.mesh) this.game.scene.remove(mob.mesh);
+      if (mob.mesh) {
+        this.game.scene.remove(mob.mesh);
+        this._disposeMobMesh(mob);
+      }
     }
     for (const drop of this.drops) {
-      if (drop.mesh) this.game.scene.remove(drop.mesh);
+      if (drop.mesh) {
+        this.game.scene.remove(drop.mesh);
+        if (drop.mesh.geometry) drop.mesh.geometry.dispose();
+        if (drop.mesh.material) {
+          if (Array.isArray(drop.mesh.material)) drop.mesh.material.forEach(m => m.dispose());
+          else drop.mesh.material.dispose();
+        }
+      }
     }
     this.mobs = [];
     this.drops = [];
+  }
+
+  // 释放生物 mesh 的 geometry 和 material
+  _disposeMobMesh(mob) {
+    if (!mob.mesh) return;
+    mob.mesh.traverse(child => {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) {
+        if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
+        else child.material.dispose();
+      }
+    });
   }
 
   serialize() {

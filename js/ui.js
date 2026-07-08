@@ -208,6 +208,12 @@ export class UI {
       // 鼠标拖拽逻辑
       slot.addEventListener('mousedown', (e) => this.onSlotMouseDown(e, i));
       slot.addEventListener('mouseenter', (e) => this.onSlotMouseEnter(e, i));
+      // 触摸支持：将 touchstart 映射为左键点击
+      slot.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.onSlotTouch(e, i);
+      }, { passive: false });
       // 方块名称提示框
       this.attachSlotTooltip(slot, () => this.game.player.inventory[i]);
 
@@ -223,6 +229,11 @@ export class UI {
       slot.dataset.craftIndex = i;
       slot.addEventListener('mousedown', (e) => this.onCraftSlotMouseDown(e, i));
       slot.addEventListener('mouseenter', (e) => this.onCraftSlotEnter(e, i));
+      slot.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.onCraftSlotTouch(e, i);
+      }, { passive: false });
       // 合成格方块名称提示框
       this.attachSlotTooltip(slot, () => this.craftingGrid ? this.craftingGrid[i] : null);
       craftGrid.appendChild(slot);
@@ -231,9 +242,33 @@ export class UI {
     // 合成输出
     const output = document.getElementById('crafting-output');
     output.addEventListener('click', () => this.takeCraftingResult());
+    output.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      this.takeCraftingResult();
+    }, { passive: false });
 
     // 关闭按钮
     document.getElementById('inv-close-btn').addEventListener('click', () => this.closeInventory());
+    // 右上角关闭按钮
+    const closeCorner = document.getElementById('inv-close-corner');
+    if (closeCorner) {
+      closeCorner.addEventListener('click', () => this.closeInventory());
+      closeCorner.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.closeInventory();
+      }, { passive: false });
+    }
+
+    // 护甲槽位事件
+    document.querySelectorAll('.armor-slot').forEach(slot => {
+      slot.addEventListener('click', () => this.onArmorSlotClick(slot.dataset.armorType));
+      slot.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.onArmorSlotClick(slot.dataset.armorType);
+      }, { passive: false });
+    });
 
     // 显示合成配方
     this.showRecipeList();
@@ -440,11 +475,57 @@ export class UI {
       this.renderSlot(craftSlots[i], this.craftingGrid?.[i] || null);
     }
 
+    // 更新护甲槽位显示
+    this.updateArmorSlots();
+
     // 检查合成结果
     this.checkCrafting();
 
     // 同步更新快捷栏
     this.updateHotbar();
+  }
+
+  // 更新护甲槽位显示
+  updateArmorSlots() {
+    const player = this.game.player;
+    const armorSlots = document.querySelectorAll('.armor-slot');
+    armorSlots.forEach(slot => {
+      const type = slot.dataset.armorType;
+      const mat = player.armor[type];
+      // 清除旧内容
+      const oldIcon = slot.querySelector('img');
+      const oldLabel = slot.querySelector('.armor-slot-label');
+      if (oldIcon) oldIcon.remove();
+      if (oldLabel) oldLabel.remove();
+
+      if (mat) {
+        slot.classList.add('equipped');
+        // 清空文字
+        slot.textContent = '';
+        // 尝试找到对应的物品ID以生成图标
+        let armorId = 0;
+        if (player.toolData) {
+          for (const [idStr, td] of Object.entries(player.toolData)) {
+            if (td.armorType === type && td.material === mat) {
+              armorId = parseInt(idStr);
+              break;
+            }
+          }
+        }
+        if (armorId > 0) {
+          const icon = document.createElement('img');
+          icon.src = generateBlockIcon(armorId) || '';
+          icon.alt = `${mat} ${type}`;
+          slot.appendChild(icon);
+        }
+        slot.title = `${mat} ${type}`;
+      } else {
+        slot.classList.remove('equipped');
+        const labels = { helmet: '头盔', chestplate: '胸甲', leggings: '护腿', boots: '靴子' };
+        slot.textContent = labels[type] || type;
+        slot.title = labels[type] || type;
+      }
+    });
   }
 
   renderSlot(slot, item) {
@@ -525,6 +606,97 @@ export class UI {
   onSlotMouseEnter(e, index) {
     // Shift+点击快速移动到背包/快捷栏
     // 暂不实现复杂的Shift移动
+  }
+
+  // 触摸版槽位操作（移动端）
+  onSlotTouch(e, index) {
+    const player = this.game.player;
+    const item = player.inventory[index];
+
+    if (this.draggedSlot) {
+      // 有拖拽中的物品：放置
+      if (item && item.id === this.draggedSlot.id) {
+        const total = item.count + this.draggedSlot.count;
+        if (total <= 64) {
+          item.count = total;
+          this.draggedSlot = null;
+        } else {
+          item.count = 64;
+          this.draggedSlot.count = total - 64;
+        }
+      } else {
+        player.inventory[index] = this.draggedSlot;
+        this.draggedSlot = item;
+      }
+    } else {
+      // 拾取物品
+      this.draggedSlot = item;
+      player.inventory[index] = null;
+    }
+
+    this.updateInventoryDisplay();
+  }
+
+  // 触摸版合成槽位操作
+  onCraftSlotTouch(e, craftIndex) {
+    if (!this.craftingGrid) this.craftingGrid = new Array(9).fill(null);
+    const item = this.craftingGrid[craftIndex];
+
+    if (this.draggedSlot) {
+      if (!item) {
+        this.craftingGrid[craftIndex] = { id: this.draggedSlot.id, count: 1 };
+        this.draggedSlot.count--;
+        if (this.draggedSlot.count <= 0) this.draggedSlot = null;
+      }
+    } else if (item) {
+      this.draggedSlot = item;
+      this.craftingGrid[craftIndex] = null;
+    }
+
+    this.updateInventoryDisplay();
+  }
+
+  // 护甲槽位点击：装备/卸下
+  onArmorSlotClick(armorType) {
+    const player = this.game.player;
+    const currentArmor = player.armor[armorType]; // 0 或 材质名
+
+    if (this.draggedSlot) {
+      // 有拖拽中的物品：尝试装备
+      const td = player.toolData && player.toolData[this.draggedSlot.id];
+      if (td && td.armorType === armorType) {
+        // 装备：把当前护甲放回背包，新护甲穿上
+        const oldMat = currentArmor || 0;
+        player.armor[armorType] = td.material;
+        // 消耗一个拖拽物品
+        this.draggedSlot.count--;
+        if (this.draggedSlot.count <= 0) this.draggedSlot = null;
+        // 旧护甲返回
+        if (oldMat) {
+          this._returnArmorItem(armorType, oldMat);
+        }
+      }
+    } else if (currentArmor) {
+      // 没有拖拽物品：卸下护甲
+      this._returnArmorItem(armorType, currentArmor);
+      player.armor[armorType] = 0;
+    }
+
+    this.updateInventoryDisplay();
+  }
+
+  // 将护甲物品放回背包
+  _returnArmorItem(armorType, material) {
+    const player = this.game.player;
+    // 通过 toolData 反查找护甲的 blockId
+    if (!player.toolData) return;
+    for (const [idStr, td] of Object.entries(player.toolData)) {
+      if (td.armorType === armorType && td.material === material) {
+        const id = parseInt(idStr);
+        player.addItem(id, 1, true);
+        return;
+      }
+    }
   }
 
   // 合成相关
@@ -689,6 +861,7 @@ export class UI {
   // ===== 暂停菜单 =====
   initMenu() {
     document.getElementById('resume-btn').addEventListener('click', () => this.resume());
+    document.getElementById('pause-gamemode-btn').addEventListener('click', () => this.showPauseGamemode());
     document.getElementById('pause-settings-btn').addEventListener('click', () => this.showPauseSettings());
     document.getElementById('save-btn').addEventListener('click', () => {
       this.game.saveGame();
@@ -696,6 +869,18 @@ export class UI {
     });
     document.getElementById('quit-btn').addEventListener('click', () => this.quitToMenu());
     document.getElementById('pause-settings-back').addEventListener('click', () => this.hidePauseSettings());
+
+    // 暂停菜单游戏模式切换
+    this._pauseGamemodeSelected = null;
+    document.getElementById('pause-gamemode-back').addEventListener('click', () => this.hidePauseGamemode());
+    document.getElementById('pause-gamemode-confirm').addEventListener('click', () => this.confirmPauseGamemode());
+    document.querySelectorAll('#pause-gamemode-grid .gamemode-card').forEach(card => {
+      card.addEventListener('click', () => {
+        document.querySelectorAll('#pause-gamemode-grid .gamemode-card').forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+        this._pauseGamemodeSelected = parseInt(card.dataset.gamemode);
+      });
+    });
   }
 
   pause() {
@@ -710,6 +895,7 @@ export class UI {
     this.settingsOpen = false;
     document.getElementById('pause-menu').classList.add('hidden');
     document.getElementById('pause-settings').classList.add('hidden');
+    document.getElementById('pause-gamemode').classList.add('hidden');
     this.game.input.requestPointerLock();
   }
 
@@ -729,6 +915,29 @@ export class UI {
     document.getElementById('pause-settings').classList.add('hidden');
     document.getElementById('pause-menu').classList.remove('hidden');
     this.settingsOpen = false;
+  }
+
+  showPauseGamemode() {
+    document.getElementById('pause-menu').classList.add('hidden');
+    document.getElementById('pause-gamemode').classList.remove('hidden');
+    // 高亮当前模式
+    const currentMode = this.game.gamemode;
+    this._pauseGamemodeSelected = currentMode;
+    document.querySelectorAll('#pause-gamemode-grid .gamemode-card').forEach(card => {
+      card.classList.toggle('selected', parseInt(card.dataset.gamemode) === currentMode);
+    });
+  }
+
+  hidePauseGamemode() {
+    document.getElementById('pause-gamemode').classList.add('hidden');
+    document.getElementById('pause-menu').classList.remove('hidden');
+  }
+
+  confirmPauseGamemode() {
+    if (this._pauseGamemodeSelected !== null && this._pauseGamemodeSelected !== this.game.gamemode) {
+      this.game.setGamemode(this._pauseGamemodeSelected);
+    }
+    this.hidePauseGamemode();
   }
 
   quitToMenu() {

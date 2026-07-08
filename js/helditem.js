@@ -618,6 +618,182 @@ function createRocketAmmoModel() {
   return g;
 }
 
+// ===== 加特林机枪模型 =====
+function createGatlingModel() {
+  const g = new THREE.Group();
+  const steelMat = mat(0x555555);
+  const darkMat = mat(0x333333);
+  const woodMat = mat(0x4a3520);
+
+  // 六根旋转枪管（前部组件）
+  const barrelGroup = new THREE.Group();
+  for (let i = 0; i < 6; i++) {
+    const angle = (i / 6) * Math.PI * 2;
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.3, 8), steelMat);
+    barrel.rotation.x = Math.PI / 2;
+    barrel.position.set(Math.cos(angle) * 0.035, Math.sin(angle) * 0.035, 0.1);
+    barrelGroup.add(barrel);
+  }
+  // 枪管前端环
+  const frontRing = new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.008, 6, 12), darkMat);
+  frontRing.position.z = 0.25;
+  frontRing.rotation.x = Math.PI / 2;
+  barrelGroup.add(frontRing);
+  // 枪管后端环
+  const backRing = new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.008, 6, 12), darkMat);
+  backRing.position.z = -0.05;
+  backRing.rotation.x = Math.PI / 2;
+  barrelGroup.add(backRing);
+  g.add(barrelGroup);
+
+  // 枪身主体
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.08, 0.14), steelMat);
+  body.position.set(0, -0.01, -0.08);
+  g.add(body);
+
+  // 弹鼓（圆盘）
+  const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.05, 0.05, 12), darkMat);
+  drum.position.set(0.05, -0.04, -0.06);
+  drum.rotation.z = Math.PI / 2;
+  g.add(drum);
+
+  // 前握把
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.08, 0.04), woodMat);
+  grip.position.set(0, -0.07, 0.05);
+  grip.rotation.x = -0.15;
+  g.add(grip);
+
+  // 后握把
+  const rearGrip = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.1, 0.04), woodMat);
+  rearGrip.position.set(0, -0.08, -0.14);
+  rearGrip.rotation.x = -0.25;
+  g.add(rearGrip);
+
+  // 准星
+  const sight = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.025, 0.008), darkMat);
+  sight.position.set(0, 0.05, -0.02);
+  g.add(sight);
+
+  return g;
+}
+
+// ===== 巴雷特狙击枪模型 =====
+function createBarrettModel() {
+  const g = new THREE.Group();
+  const steelMat = mat(0x3a3a3a);
+  const darkMat = mat(0x222222);
+  const woodMat = mat(0x5a4a2a);
+  const scopeMat = mat(0x1a1a1a);
+
+  // 长枪管
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.45, 12), steelMat);
+  barrel.rotation.x = Math.PI / 2;
+  barrel.position.z = 0.15;
+  g.add(barrel);
+
+  // 枪口消焰器
+  const muzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.025, 0.06, 8), darkMat);
+  muzzle.rotation.x = Math.PI / 2;
+  muzzle.position.z = 0.38;
+  g.add(muzzle);
+
+  // 枪身主体
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.06, 0.2), steelMat);
+  body.position.set(0, -0.01, -0.05);
+  g.add(body);
+
+  // 瞄准镜主体
+  const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.16, 10), scopeMat);
+  scope.rotation.x = Math.PI / 2;
+  scope.position.set(0, 0.05, -0.02);
+  g.add(scope);
+
+  // 瞄准镜前镜头
+  const scopeFront = new THREE.Mesh(new THREE.CircleGeometry(0.022, 10), mat(0x4488aa, { emissive: 0x224466, emissiveIntensity: 0.3 }));
+  scopeFront.position.set(0, 0.05, 0.06);
+  scopeFront.rotation.y = 0;
+  g.add(scopeFront);
+
+  // 瞄准镜后镜头
+  const scopeRear = new THREE.Mesh(new THREE.CircleGeometry(0.022, 10), mat(0x111111));
+  scopeRear.position.set(0, 0.05, -0.1);
+  g.add(scopeRear);
+
+  // 瞄准镜支架
+  const scopeMount1 = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.03, 0.015), darkMat);
+  scopeMount1.position.set(0, 0.02, 0.03);
+  g.add(scopeMount1);
+  const scopeMount2 = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.03, 0.015), darkMat);
+  scopeMount2.position.set(0, 0.02, -0.07);
+  g.add(scopeMount2);
+
+  // 枪托
+  const stock = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.07, 0.12), woodMat);
+  stock.position.set(0, -0.02, -0.2);
+  g.add(stock);
+
+  // 握把
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.09, 0.04), darkMat);
+  grip.position.set(0, -0.07, -0.1);
+  grip.rotation.x = -0.2;
+  g.add(grip);
+
+  // 扳机护圈
+  const trigger = new THREE.Mesh(new THREE.TorusGeometry(0.015, 0.006, 4, 8, Math.PI), darkMat);
+  trigger.position.set(0, -0.04, -0.08);
+  trigger.rotation.x = Math.PI / 2;
+  g.add(trigger);
+
+  // 弹匣
+  const mag = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.08, 0.05), darkMat);
+  mag.position.set(0, -0.07, 0.0);
+  g.add(mag);
+
+  return g;
+}
+
+// ===== 加特林子弹模型（手持） =====
+function createGatlingAmmoModel() {
+  const g = new THREE.Group();
+
+  // 弹链（多颗小子弹串联）
+  for (let i = 0; i < 3; i++) {
+    const bullet = new THREE.Group();
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.04, 6), mat(0xccaa44));
+    tip.position.y = 0.03;
+    bullet.add(tip);
+    const casing = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.06, 6), mat(0xddbb66));
+    casing.position.y = -0.02;
+    bullet.add(casing);
+    bullet.position.set(0, -i * 0.08, 0);
+    g.add(bullet);
+  }
+
+  return g;
+}
+
+// ===== 巴雷特子弹模型（手持） =====
+function createBarrettAmmoModel() {
+  const g = new THREE.Group();
+
+  // 大型穿甲弹头
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.028, 0.08, 8), mat(0xb8860b));
+  tip.position.y = 0.08;
+  g.add(tip);
+
+  // 弹壳
+  const casing = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.12, 8), mat(0xdaa520));
+  casing.position.y = -0.02;
+  g.add(casing);
+
+  // 弹底
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.026, 0.02, 8), mat(0x8b7500));
+  base.position.y = -0.08;
+  g.add(base);
+
+  return g;
+}
+
 // ===== 默认平面图标（无3D模型的物品）=====
 function createFlatIcon(blockId, atlasTexture) {
   const g = new THREE.Group();
@@ -705,6 +881,10 @@ export function createItemModel(itemId, toolData, atlasTexture) {
     case BLOCK.ROCKET_LAUNCHER: return createRocketLauncherModel();
     case BLOCK.BULLET_ITEM:   return createBulletItemModel();
     case BLOCK.ROCKET_AMMO:   return createRocketAmmoModel();
+    case BLOCK.GATLING:       return createGatlingModel();
+    case BLOCK.BARRETT:       return createBarrettModel();
+    case BLOCK.GATLING_AMMO:  return createGatlingAmmoModel();
+    case BLOCK.BARRETT_AMMO:  return createBarrettAmmoModel();
     default: {
       // 普通方块
       const def = BLOCK_DEFS[itemId];
@@ -817,7 +997,12 @@ export class HeldItemViewModel {
       type = 'pistol';
     } else if (itemId === BLOCK.ROCKET_LAUNCHER) {
       type = 'rocket_launcher';
-    } else if (itemId === BLOCK.BULLET_ITEM || itemId === BLOCK.ROCKET_AMMO) {
+    } else if (itemId === BLOCK.GATLING) {
+      type = 'gatling';
+    } else if (itemId === BLOCK.BARRETT) {
+      type = 'barrett';
+    } else if (itemId === BLOCK.BULLET_ITEM || itemId === BLOCK.ROCKET_AMMO ||
+               itemId === BLOCK.GATLING_AMMO || itemId === BLOCK.BARRETT_AMMO) {
       type = 'throwable';
     }
 
@@ -907,6 +1092,16 @@ export class HeldItemViewModel {
         // 火箭筒：扛在肩上
         model.position.set(0.3, -0.1, -0.6);
         model.rotation.set(-1.45, -0.15, -0.05);
+        break;
+      case 'gatling':
+        // 加特林：双手持枪，略向下倾斜
+        model.position.set(0.28, -0.15, -0.55);
+        model.rotation.set(-1.35, -0.08, 0.02);
+        break;
+      case 'barrett':
+        // 巴雷特：狙击姿势，枪身水平
+        model.position.set(0.26, -0.14, -0.58);
+        model.rotation.set(-1.45, -0.05, 0);
         break;
       default:
         // 方块：略倾斜展示

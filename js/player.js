@@ -287,6 +287,11 @@ export class Player {
     // 氧气系统
     this.updateOxygen(dt);
 
+    // PvP 无敌帧倒计时
+    if (this._pvpInvulnTimer && this._pvpInvulnTimer > 0) {
+      this._pvpInvulnTimer -= dt;
+    }
+
     // 防止掉出世界
     if (this.position.y < -10) {
       this.takeDamage(20);
@@ -390,6 +395,8 @@ export class Player {
           this.position.y = stepUpPos.y;
           this.position[axis] = newPos[axis];
           this.onGround = false; // 防止同一帧双重爬坡
+          // 重置掉落追踪，防止自动爬坡触发掉落伤害
+          this.fallStartY = null;
           return;
         }
       }
@@ -421,8 +428,11 @@ export class Player {
     }
   }
 
-  takeDamage(amount) {
+  takeDamage(amount, source = 'generic') {
     if (!this.canTakeDamage() || this.dead) return;
+    // PvP 伤害冷却（仅对玩家攻击生效，防止瞬间被连击致死）
+    if (source === 'pvp' && this._pvpInvulnTimer && this._pvpInvulnTimer > 0) return;
+    if (source === 'pvp') this._pvpInvulnTimer = 0.5;
     // 护甲减伤
     const armor = this.getArmorValue();
     const reducedDamage = Math.max(1, amount - armor * 0.5);
