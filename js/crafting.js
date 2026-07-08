@@ -13,7 +13,14 @@ export const ITEM_TYPE = {
   SWORD: 'sword',
   HOE: 'hoe',
   BOW: 'bow',
+  CROSSBOW: 'crossbow',
+  TRIDENT: 'trident',
   ARROW: 'arrow',
+  SPECTRAL_ARROW: 'spectral_arrow',
+  SNOWBALL: 'snowball',
+  EGG: 'egg',
+  ENDER_PEARL: 'ender_pearl',
+  FIREWORK_ROCKET: 'firework_rocket',
   FISHING_ROD: 'fishing_rod',
   HELMET: 'helmet',
   CHESTPLATE: 'chestplate',
@@ -400,6 +407,56 @@ export const RECIPES = [
     name: '钓鱼竿',
   },
 
+  // ===== 弩箭/三叉戟/射击武器 =====
+  {
+    id: 'crossbow',
+    pattern: [['stick', 'iron_ingot', 'stick'], ['string', 'bow', 'string'], ['stick', 'iron_ingot', 'stick']],
+    result: { itemId: ITEM_TYPE.CROSSBOW, count: 1 },
+    name: '弩',
+  },
+  {
+    id: 'spectral_arrow',
+    pattern: [[0, 'glowstone', 0], ['arrow', 'arrow', 'arrow'], [0, 'glowstone', 0]],
+    result: { itemId: ITEM_TYPE.SPECTRAL_ARROW, count: 4 },
+    name: '光灵箭 x4',
+  },
+  {
+    id: 'snowball',
+    pattern: [[0, 17, 0], [0, 17, 0], [0, 0, 0]],
+    result: { itemId: ITEM_TYPE.SNOWBALL, count: 4 },
+    name: '雪球 x4',
+  },
+  {
+    id: 'firework_rocket',
+    pattern: [[0, 'gunpowder', 0], [0, 'paper', 0], [0, 0, 0]],
+    result: { itemId: ITEM_TYPE.FIREWORK_ROCKET, count: 3 },
+    name: '烟花火箭 x3',
+  },
+  {
+    id: 'iron_sword',
+    pattern: [[0, 'iron_ingot', 0], [0, 'iron_ingot', 0], [0, 'stick', 0]],
+    result: { toolType: 'sword', material: 'iron', count: 1 },
+    name: '铁剑',
+  },
+  {
+    id: 'diamond_sword',
+    pattern: [[0, 'diamond', 0], [0, 'diamond', 0], [0, 'stick', 0]],
+    result: { toolType: 'sword', material: 'diamond', count: 1 },
+    name: '钻石剑',
+  },
+  {
+    id: 'wood_sword',
+    pattern: [[0, 7, 0], [0, 7, 0], [0, 'stick', 0]],
+    result: { toolType: 'sword', material: 'wood', count: 1 },
+    name: '木剑',
+  },
+  {
+    id: 'stone_sword',
+    pattern: [[0, 8, 0], [0, 8, 0], [0, 'stick', 0]],
+    result: { toolType: 'sword', material: 'stone', count: 1 },
+    name: '石剑',
+  },
+
   // ===== 护甲 =====
   {
     id: 'leather_helmet',
@@ -582,4 +639,165 @@ export function getRecipeList() {
     pattern: r.pattern,
     result: r.result,
   }));
+}
+
+// ===== ITEM_TYPE 字符串 → BLOCK ID 映射 =====
+// 用于将合成配方中的字符串标识符映射到背包中的数字方块 ID
+const ITEM_TYPE_TO_BLOCK = {
+  [ITEM_TYPE.STICK]: BLOCK.STICK,
+  [ITEM_TYPE.STRING]: BLOCK.STRING_ITEM,
+  [ITEM_TYPE.BOW]: BLOCK.BOW,
+  [ITEM_TYPE.CROSSBOW]: BLOCK.CROSSBOW,
+  [ITEM_TYPE.TRIDENT]: BLOCK.TRIDENT,
+  [ITEM_TYPE.ARROW]: BLOCK.ARROW,
+  [ITEM_TYPE.SPECTRAL_ARROW]: BLOCK.SPECTRAL_ARROW,
+  [ITEM_TYPE.SNOWBALL]: BLOCK.SNOWBALL,
+  [ITEM_TYPE.EGG]: BLOCK.EGG_ITEM,
+  [ITEM_TYPE.ENDER_PEARL]: BLOCK.ENDER_PEARL,
+  [ITEM_TYPE.FIREWORK_ROCKET]: BLOCK.FIREWORK_ROCKET,
+  [ITEM_TYPE.FISHING_ROD]: BLOCK.FISHING_ROD,
+  [ITEM_TYPE.BUCKET]: BLOCK.BUCKET,
+  [ITEM_TYPE.SHIELD]: 0, // 盾牌暂无方块 ID，使用 0 占位
+  [ITEM_TYPE.PAPER]: BLOCK.PAPER,
+  [ITEM_TYPE.MAP]: 0,
+  [ITEM_TYPE.BOOK]: BLOCK.BOOK,
+  [ITEM_TYPE.BREAD]: BLOCK.BREAD,
+  [ITEM_TYPE.FLINT_AND_STEEL]: 0,
+  [ITEM_TYPE.SHEARS]: 0,
+  [ITEM_TYPE.COMPASS]: 0,
+  [ITEM_TYPE.CLOCK]: 0,
+  [ITEM_TYPE.BONE_MEAL]: 0,
+  [ITEM_TYPE.SUGAR]: 0,
+  [ITEM_TYPE.LEATHER]: BLOCK.LEATHER,
+  [ITEM_TYPE.IRON_INGOT]: BLOCK.IRON_INGOT,
+  [ITEM_TYPE.GOLD_INGOT]: BLOCK.GOLD_INGOT,
+  [ITEM_TYPE.DIAMOND]: BLOCK.DIAMOND_GEM,
+  [ITEM_TYPE.EMERALD]: BLOCK.EMERALD_GEM,
+  [ITEM_TYPE.COAL]: BLOCK.COAL_ITEM,
+  [ITEM_TYPE.WHEAT]: BLOCK.WHEAT_ITEM,
+  [ITEM_TYPE.APPLE]: BLOCK.APPLE,
+  [ITEM_TYPE.POTION]: 0,
+  [ITEM_TYPE.BOTTLE]: 0,
+  [ITEM_TYPE.RAW_BEEF]: BLOCK.RAW_BEEF,
+  [ITEM_TYPE.COOKED_BEEF]: BLOCK.COOKED_BEEF,
+};
+
+// 方块别名映射（合成配方中使用别名 → 实际 BLOCK ID）
+const BLOCK_ALIAS = {
+  'glowstone': BLOCK.GLOWSTONE,
+  'redstone': BLOCK.REDSTONE_DUST_ITEM,
+  'coal': BLOCK.COAL_ITEM,
+  'diamond': BLOCK.DIAMOND_GEM,
+  'emerald': BLOCK.EMERALD_GEM,
+  'iron_ingot': BLOCK.IRON_INGOT,
+  'gold_ingot': BLOCK.GOLD_INGOT,
+  'leather': BLOCK.LEATHER,
+  'paper': BLOCK.PAPER,
+  'book': BLOCK.BOOK,
+  'stick': BLOCK.STICK,
+  'string': BLOCK.STRING_ITEM,
+  'gunpowder': BLOCK.GUNPOWDER,
+  'bow': BLOCK.BOW,
+  'arrow': BLOCK.ARROW,
+  'flint': BLOCK.FLINT,
+  'feather': BLOCK.FEATHER,
+};
+
+// 工具/护甲类型 → 生成物品的方块 ID
+// 合成出的工具/武器/护甲需要生成一个唯一的物品 ID
+let _nextToolId = 10000;
+
+/**
+ * 将合成配方模式中的值解析为统一的数字 BLOCK ID
+ * 用于比较 UI 背包中的物品和配方模式
+ */
+function resolveToBlockId(value) {
+  if (value === 0 || value === null) return 0;
+  if (typeof value === 'number') return value;
+  // 字符串：先查别名映射，再查 ITEM_TYPE 映射
+  if (BLOCK_ALIAS[value] !== undefined) return BLOCK_ALIAS[value];
+  if (ITEM_TYPE_TO_BLOCK[value] !== undefined) return ITEM_TYPE_TO_BLOCK[value];
+  return -1; // 未知标识
+}
+
+/**
+ * 从 UI 背包网格匹配配方
+ * @param {Array} grid - 9 元素数组，每个元素为 {id: blockId, count} 或 null
+ * @returns {Object|null} - {id: blockId, count, recipe} 或 null
+ */
+export function matchRecipeFromInventory(grid) {
+  // 将 UI 网格转为 2D 数字数组（block IDs）
+  const inputGrid = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  for (let i = 0; i < 9; i++) {
+    const x = i % 3;
+    const y = Math.floor(i / 3);
+    if (grid[i] && grid[i].id) {
+      inputGrid[y][x] = grid[i].id;
+    }
+  }
+
+  // 归一化输入网格为 block ID 数组
+  const inputItems = [];
+  for (let y = 0; y < 3; y++) {
+    for (let x = 0; x < 3; x++) {
+      const v = inputGrid[y][x];
+      inputItems.push(v === 0 ? null : `b:${v}`);
+    }
+  }
+
+  // 遍历所有配方
+  for (const recipe of RECIPES) {
+    // 将配方的 pattern 也转为 block ID 数组
+    const patternItems = [];
+    for (let y = 0; y < 3; y++) {
+      for (let x = 0; x < 3; x++) {
+        const v = recipe.pattern[y] ? recipe.pattern[y][x] : 0;
+        const blockId = resolveToBlockId(v);
+        patternItems.push(blockId === 0 ? null : `b:${blockId}`);
+      }
+    }
+
+    if (patternsMatch(inputItems, patternItems)) {
+      // 匹配成功，将结果转为 block ID
+      return resolveRecipeResult(recipe);
+    }
+  }
+  return null;
+}
+
+/**
+ * 将配方的 result 转为 {id: blockId, count} 格式
+ */
+function resolveRecipeResult(recipe) {
+  const result = recipe.result;
+  let blockId = 0;
+
+  if (result.blockId !== undefined) {
+    blockId = result.blockId;
+  } else if (result.itemId !== undefined) {
+    // 查找 ITEM_TYPE → BLOCK 映射
+    blockId = ITEM_TYPE_TO_BLOCK[result.itemId] || 0;
+    // 如果映射不存在，使用动态 ID
+    if (blockId === 0) {
+      blockId = _nextToolId++;
+    }
+  } else if (result.toolType !== undefined) {
+    // 工具/武器：生成动态 ID，并记录工具信息
+    blockId = _nextToolId++;
+  } else if (result.armorType !== undefined) {
+    // 护甲：生成动态 ID，并记录护甲信息
+    blockId = _nextToolId++;
+  }
+
+  return {
+    id: blockId,
+    count: result.count || 1,
+    recipe: recipe,
+    // 保留原始 result 信息，供 UI 创建工具/护甲
+    resultType: result.toolType ? 'tool' : (result.armorType ? 'armor' : (result.itemId ? 'item' : 'block')),
+    toolType: result.toolType || null,
+    material: result.material || null,
+    armorType: result.armorType || null,
+    name: recipe.name,
+  };
 }

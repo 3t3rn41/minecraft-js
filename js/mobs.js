@@ -131,20 +131,25 @@ class Entity {
       this.mesh.traverse(child => {
         if (child.isMesh && child.material) {
           if (flash) {
-            if (!child.userData._origEmissive) {
-              child.userData._origEmissive = child.material.emissive ? child.material.emissive.getHex() : 0x000000;
+            // 保存原始颜色（仅第一次）
+            if (child.userData._origColor === undefined) {
+              child.userData._origColor = child.material.color ? child.material.color.clone() : new THREE.Color(0xffffff);
             }
-            child.material.emissive = child.material.emissive || new THREE.Color();
-            child.material.emissive.setHex(0xff0000);
+            // 将材质颜色混合为红色
+            if (child.material.color) {
+              child.material.color.setRGB(1, 0.15, 0.15);
+            }
           }
         }
       });
     } else {
+      // 恢复原始颜色
       this.mesh.traverse(child => {
-        if (child.isMesh && child.material && child.userData._origEmissive !== undefined) {
-          child.material.emissive = child.material.emissive || new THREE.Color();
-          child.material.emissive.setHex(child.userData._origEmissive);
-          delete child.userData._origEmissive;
+        if (child.isMesh && child.material && child.userData._origColor !== undefined) {
+          if (child.material.color) {
+            child.material.color.copy(child.userData._origColor);
+          }
+          delete child.userData._origColor;
         }
       });
     }
@@ -427,9 +432,9 @@ class Zombie extends Entity {
         this.takeDamage(1);
         this.burnTimer = 0;
       }
-      if (this.mesh) {
+      if (this.mesh && this.hurtTimer <= 0) {
         this.mesh.children.forEach(child => {
-          if (child.material) child.material.color.setHex(0x6a5a2a);
+          if (child.material && child.material.color) child.material.color.setHex(0x6a5a2a);
         });
       }
     }
@@ -2045,11 +2050,17 @@ export class MobManager {
       }
     }
 
-    // 定时生成生物
+    // 定时生成生物（仅主机生成，客户端通过同步接收）
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) {
       this.spawnTimer = 5 + Math.random() * 5;
-      this.trySpawnNearPlayer();
+      // 只有主机在联机模式下负责生成生物
+      if (this.game.multiplayer && this.game.multiplayer.isHost) {
+        this.trySpawnNearPlayer();
+      } else if (!this.game.multiplayer) {
+        // 单人模式正常生成
+        this.trySpawnNearPlayer();
+      }
     }
   }
 
@@ -2069,7 +2080,21 @@ export class MobManager {
         const above = this.game.world.getBlock(x, y + 1, z);
         const above2 = this.game.world.getBlock(x, y + 2, z);
         if (above === 0 && above2 === 0) {
-          this.spawnMob(x + 0.5, y + 1, z + 0.5);
+          // 确定生物类型（在生成前确定，用于同步）
+          const isNight = !this.game.sky.isDaytime();
+          let mobType = null;
+          if (isNight) {
+            const hostileTypes = ['zombie', 'creeper', 'skeleton', 'spider'];
+            mobType = hostileTypes[Math.floor(Math.random() * hostileTypes.length)];
+          } else {
+            const passiveTypes = ['pig', 'cow', 'sheep', 'chicken'];
+            mobType = passiveTypes[Math.floor(Math.random() * passiveTypes.length)];
+          }
+          this.spawnMob(x + 0.5, y + 1, z + 0.5, mobType);
+          // 联机模式下同步给客户端
+          if (this.game.multiplayer && this.game.multiplayer.isHost) {
+            this.game.multiplayer.sendMobSpawn(x + 0.5, y + 1, z + 0.5, mobType);
+          }
           return;
         }
         break;
@@ -2078,7 +2103,7 @@ export class MobManager {
   }
 
   // 攻击附近的生物
-  attackMobs(player, reach = 4) {
+  attackMobs(player, reach = 2.5, damage = 1) {
     const eyePos = player.getEyePosition();
     const dir = player.getLookDirection();
     let closestMob = null;
@@ -2102,7 +2127,7 @@ export class MobManager {
     }
 
     if (closestMob) {
-      closestMob.takeDamage(4, player.position.x, player.position.z);
+      closestMob.takeDamage(damage, player.position.x, player.position.z);
       return true;
     }
     return false;

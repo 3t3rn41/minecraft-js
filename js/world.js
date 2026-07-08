@@ -32,6 +32,18 @@ export class World {
     this.waterProcessing = new Set(); // 防止重复处理
   }
 
+  // ===== 确定性哈希随机 =====
+  // 基于世界种子 + 坐标的确定性伪随机数生成器
+  // 确保相同种子 + 相同坐标 = 相同结果（跨客户端一致）
+  _hashRandom(x, y, z, salt = 0) {
+    let h = ((this.seed | 0) + salt) | 0;
+    h = Math.imul(h ^ (x | 0), 2654435761);
+    h = Math.imul(h ^ (y | 0), 2246822519);
+    h = Math.imul(h ^ (z | 0), 3266489917);
+    h = (h ^ (h >>> 16)) >>> 0;
+    return h / 4294967296; // 返回 0..1
+  }
+
   chunkKey(cx, cz) {
     return `${cx},${cz}`;
   }
@@ -297,17 +309,23 @@ export class World {
     return currentBlock;
   }
 
-  // 树木生成
+  // 树木生成（确定性：基于坐标+种子的哈希随机）
   maybeTree(chunk, x, y, z, biome) {
     if (x < 2 || x >= CHUNK_SIZE - 2 || z < 2 || z >= CHUNK_SIZE - 2) return;
     const chance = biome === BIOME.FOREST ? 0.03 : 0.008;
-    if (Math.random() < chance) {
+    const wx = chunk.cx * CHUNK_SIZE + x;
+    const wz = chunk.cz * CHUNK_SIZE + z;
+    const r = this._hashRandom(wx, y, wz, 7777);
+    if (r < chance) {
       this.placeTree(chunk, x, y, z);
     }
   }
 
   placeTree(chunk, x, y, z) {
-    const treeHeight = 4 + Math.floor(Math.random() * 3); // 4-6格高
+    const wx = chunk.cx * CHUNK_SIZE + x;
+    const wz = chunk.cz * CHUNK_SIZE + z;
+    const r = this._hashRandom(wx, y, wz, 8888);
+    const treeHeight = 4 + Math.floor(r * 3); // 4-6格高
     // 树干
     for (let i = 0; i < treeHeight; i++) {
       if (y + i < CHUNK_HEIGHT) {
@@ -369,11 +387,14 @@ export class World {
     }
   }
 
-  // 植被生成（草丛、花、蘑菇）— 大幅降低密度
+  // 植被生成（确定性：基于坐标+种子的哈希随机）
   maybeVegetation(chunk, x, y, z) {
+    const wx = chunk.cx * CHUNK_SIZE + x;
+    const wz = chunk.cz * CHUNK_SIZE + z;
     // 仅约 5% 的格子生成植被
-    if (Math.random() > 0.05) return;
-    const r = Math.random();
+    const r0 = this._hashRandom(wx, y, wz, 9999);
+    if (r0 > 0.05) return;
+    const r = this._hashRandom(wx, y, wz, 11111);
     if (r < 0.50) {
       chunk.blocks[chunk.index(x, y, z)] = BLOCK.TALL_GRASS;
     } else if (r < 0.72) {
@@ -395,6 +416,14 @@ export class World {
         chunk.blocks[chunk.index(x - ox, y, z - oz)] = blockId;
       }
     }
+  }
+
+  // 清除所有区块（用于客户端收到主机种子后重置世界）
+  clearAllChunks(scene) {
+    for (const chunk of this.chunks.values()) {
+      if (scene) chunk.disposeMesh(scene);
+    }
+    this.chunks.clear();
   }
 
   // 更新区块网格（只更新脏区块，限制每帧数量）

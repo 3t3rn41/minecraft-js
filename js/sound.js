@@ -204,4 +204,24 @@ export class SoundSystem {
     this.splash();
     setTimeout(() => this.tone(880, 0.1, 'sine', 0.15), 100);
   }
+
+  // 弓箭射击
+  bow() {
+    if (!this.enabled || !this.ctx) return;
+    this.sweep(800, 300, 0.15, 'sine', 0.15);
+    this.noise(0.05, 0.1, 2000);
+  }
+
+  // 弩射击
+  crossbow() {
+    if (!this.enabled || !this.ctx) return;
+    this.sweep(1000, 200, 0.1, 'square', 0.15);
+    this.noise(0.06, 0.12, 2500);
+  }
+
+  // 三叉戟投掷
+  trident() {
+    if (!this.enabled || !this.ctx) return;
+    this.sweep(300, 600, 0.2, 'sine', 0.12);
+  }
 }

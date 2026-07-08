@@ -4,7 +4,8 @@
  */
 
 import { BLOCK_DEFS, BLOCK, generateBlockIcon, PLACEABLE_BLOCKS } from './blocks.js';
-import { GAMEMODE_NAMES, GAMEMODE_ICONS } from './gamemodes.js';
+import { GAMEMODE_NAMES, GAMEMODE_ICONS, GAMEMODE, GAMEMODE_CONFIG } from './gamemodes.js';
+import { matchRecipeFromInventory, getRecipeList, ITEM_TYPE, TOOL_MATERIAL, ARMOR_MATERIAL } from './crafting.js';
 
 export class UI {
   constructor(game) {
@@ -22,6 +23,7 @@ export class UI {
     this.initTooltip();
     this.initHotbar();
     this.initInventory();
+    this.initExperiencePanel();
     this.initMenu();
     this.initSettings();
     this.initDeath();
@@ -83,33 +85,12 @@ export class UI {
     slot.addEventListener('touchcancel', cancelTouch);
   }
 
-  // ===== 手持方块显示（右下角） =====
+  // ===== 手持方块显示（已由3D视图模型取代） =====
   updateHeldBlockDisplay() {
+    // 手持物品现由 HeldItemViewModel (3D) 和 PlayerModel.setHeldItem (第三人称) 处理
+    // 此方法保留为空以兼容旧调用
     const display = document.getElementById('held-block-display');
-    if (!display) return;
-    const item = this.game.player.getSelectedItem();
-    if (item) {
-      const def = BLOCK_DEFS[item.id];
-      const iconSrc = generateBlockIcon(item.id);
-      if (item.id !== this._lastHeldBlockId) {
-        this._lastHeldBlockId = item.id;
-        display.innerHTML = '';
-        if (iconSrc) {
-          const img = document.createElement('img');
-          img.src = iconSrc;
-          img.alt = def ? def.name : '';
-          display.appendChild(img);
-        }
-        // 重新触发动画
-        display.classList.remove('animate');
-        void display.offsetWidth; // 强制回流
-        display.classList.add('animate');
-      }
-      display.style.display = 'block';
-    } else {
-      display.style.display = 'none';
-      this._lastHeldBlockId = null;
-    }
+    if (display) display.style.display = 'none';
   }
 
   // ===== 快捷栏 =====
@@ -260,14 +241,187 @@ export class UI {
 
   showRecipeList() {
     const list = document.getElementById('recipe-list');
-    const recipes = [
-      '木板 x4: 1x 原木',
-      '工作台: 2x2 木板',
-      '圆石: 挖掘石头获得',
-      '砖块: 4x 红砖 (需烧炼)',
-      '书架: 6x 木板 + 3x 书',
-    ];
-    list.innerHTML = recipes.map(r => `<div class="recipe-item">${r}</div>`).join('');
+    if (!list) return;
+    const allRecipes = getRecipeList();
+    list.innerHTML = allRecipes.map(r => `<div class="recipe-item">${r.name}</div>`).join('');
+  }
+
+  // ===== 体验模式物品面板 =====
+  initExperiencePanel() {
+    const searchInput = document.getElementById('experience-search-input');
+    if (searchInput) {
+      searchInput.addEventListener('input', () => {
+        this._populateExperienceItems(searchInput.value);
+      });
+    }
+  }
+
+  // 判断当前是否为体验模式
+  isExperienceMode() {
+    return this.game.player && this.game.player.gamemode === GAMEMODE.EXPERIENCE;
+  }
+
+  // 打开背包时根据模式显示/隐藏体验面板
+  updateExperiencePanelVisibility() {
+    const panel = document.getElementById('experience-panel');
+    if (!panel) return;
+    const show = this.isExperienceMode();
+    panel.classList.toggle('hidden', !show);
+    if (show) {
+      this._populateExperienceItems('');
+    }
+  }
+
+  // 获取所有可用的物品列表（合成配方产出 + 所有方块 + 工具/武器/护甲）
+  _getExperienceItemlist() {
+    const items = [];
+    const seen = new Set();
+
+    // 1. 从合成配方中提取所有产出物品
+    const recipes = getRecipeList();
+    for (const recipe of recipes) {
+      const result = recipe.result;
+      let blockId = 0;
+      let name = recipe.name;
+      let category = '合成物品';
+
+      if (result.blockId !== undefined) {
+        blockId = result.blockId;
+        const def = BLOCK_DEFS[blockId];
+        name = def ? def.name : recipe.name;
+        category = '方块';
+      } else if (result.itemId !== undefined) {
+        // 通过 crafting.js 的映射查找
+        blockId = this._resolveItemId(result.itemId);
+        if (blockId > 0) {
+          const def = BLOCK_DEFS[blockId];
+          name = def ? def.name : recipe.name;
+        }
+        category = '物品';
+      } else if (result.toolType !== undefined) {
+        // 工具/武器 — 使用动态 ID
+        blockId = this._getOrCreateToolId(result.toolType, result.material);
+        name = recipe.name;
+        category = result.toolType === 'sword' ? '武器' : '工具';
+      } else if (result.armorType !== undefined) {
+        blockId = this._getOrCreateToolId(result.armorType, result.material);
+        name = recipe.name;
+        category = '护甲';
+      }
+
+      if (blockId > 0 && !seen.has(blockId)) {
+        seen.add(blockId);
+        items.push({ id: blockId, name, count: result.count || 1, category, recipe });
+      }
+    }
+
+    // 2. 添加所有有定义的方块/物品
+    for (const [idStr, def] of Object.entries(BLOCK_DEFS)) {
+      const id = parseInt(idStr);
+      if (id === 0 || seen.has(id)) continue;
+      if (def.name && def.name !== '空气') {
+        let category = '方块';
+        if (!def.solid && def.transparent && !PLACEABLE_BLOCKS.includes(id)) {
+          category = '物品';
+        }
+        items.push({ id, name: def.name, count: 1, category });
+        seen.add(id);
+      }
+    }
+
+    return items;
+  }
+
+  // 工具/护甲动态 ID 映射
+  _getOrCreateToolId(type, material) {
+    if (!this._toolIdMap) this._toolIdMap = {};
+    if (!this._nextToolId) this._nextToolId = 20000;
+    const key = `${type}:${material}`;
+    if (!this._toolIdMap[key]) {
+      this._toolIdMap[key] = this._nextToolId++;
+      // 同时记录工具属性供使用
+      if (!this.game.player.toolData) this.game.player.toolData = {};
+      this.game.player.toolData[this._toolIdMap[key]] = {
+        toolType: type,
+        material: material,
+        name: `${TOOL_MATERIAL[material?.toUpperCase()]?.name || material}${type === 'sword' ? '剑' : type === 'pickaxe' ? '镐' : type === 'axe' ? '斧' : type === 'shovel' ? '锹' : type === 'hoe' ? '锄' : type === 'helmet' ? '头盔' : type === 'chestplate' ? '胸甲' : type === 'leggings' ? '护腿' : type === 'boots' ? '靴子' : type}`,
+        durability: (TOOL_MATERIAL[material?.toUpperCase()] || {}).durability || 60,
+      };
+    }
+    return this._toolIdMap[key];
+  }
+
+  // 解析 ITEM_TYPE 到 BLOCK ID
+  _resolveItemId(itemId) {
+    const map = {
+      [ITEM_TYPE.STICK]: BLOCK.STICK,
+      [ITEM_TYPE.STRING]: BLOCK.STRING_ITEM,
+      [ITEM_TYPE.BOW]: BLOCK.BOW,
+      [ITEM_TYPE.CROSSBOW]: BLOCK.CROSSBOW,
+      [ITEM_TYPE.TRIDENT]: BLOCK.TRIDENT,
+      [ITEM_TYPE.ARROW]: BLOCK.ARROW,
+      [ITEM_TYPE.SPECTRAL_ARROW]: BLOCK.SPECTRAL_ARROW,
+      [ITEM_TYPE.SNOWBALL]: BLOCK.SNOWBALL,
+      [ITEM_TYPE.EGG]: BLOCK.EGG_ITEM,
+      [ITEM_TYPE.ENDER_PEARL]: BLOCK.ENDER_PEARL,
+      [ITEM_TYPE.FIREWORK_ROCKET]: BLOCK.FIREWORK_ROCKET,
+      [ITEM_TYPE.FISHING_ROD]: BLOCK.FISHING_ROD,
+      [ITEM_TYPE.BUCKET]: BLOCK.BUCKET,
+      [ITEM_TYPE.PAPER]: BLOCK.PAPER,
+      [ITEM_TYPE.BOOK]: BLOCK.BOOK,
+      [ITEM_TYPE.BREAD]: BLOCK.BREAD,
+      [ITEM_TYPE.LEATHER]: BLOCK.LEATHER,
+      [ITEM_TYPE.IRON_INGOT]: BLOCK.IRON_INGOT,
+      [ITEM_TYPE.GOLD_INGOT]: BLOCK.GOLD_INGOT,
+      [ITEM_TYPE.DIAMOND]: BLOCK.DIAMOND_GEM,
+      [ITEM_TYPE.EMERALD]: BLOCK.EMERALD_GEM,
+      [ITEM_TYPE.COAL]: BLOCK.COAL_ITEM,
+      [ITEM_TYPE.WHEAT]: BLOCK.WHEAT_ITEM,
+      [ITEM_TYPE.APPLE]: BLOCK.APPLE,
+    };
+    return map[itemId] || 0;
+  }
+
+  // 填充体验面板物品列表
+  _populateExperienceItems(searchQuery) {
+    const container = document.getElementById('experience-items');
+    if (!container) return;
+
+    const allItems = this._getExperienceItemlist();
+    const query = (searchQuery || '').toLowerCase().trim();
+    const filtered = query
+      ? allItems.filter(item => item.name.toLowerCase().includes(query) || item.category.toLowerCase().includes(query))
+      : allItems;
+
+    container.innerHTML = '';
+    for (const item of filtered) {
+      const slot = document.createElement('div');
+      slot.className = 'experience-item';
+      slot.title = `${item.name} (${item.category})`;
+
+      const icon = document.createElement('img');
+      icon.className = 'inv-slot-icon';
+      icon.src = generateBlockIcon(item.id) || '';
+      slot.appendChild(icon);
+
+      const label = document.createElement('span');
+      label.className = 'experience-item-name';
+      label.textContent = item.name;
+      slot.appendChild(label);
+
+      slot.addEventListener('click', () => {
+        // 直接给予玩家该物品
+        this.game.player.addItem(item.id, item.count || 1, true);
+        this.updateInventoryDisplay();
+        this.showToast(`已获得: ${item.name}`, 800);
+      });
+
+      container.appendChild(slot);
+    }
+
+    if (filtered.length === 0) {
+      container.innerHTML = '<div class="experience-empty">未找到匹配物品</div>';
+    }
   }
 
   updateInventoryDisplay() {
@@ -442,64 +596,49 @@ export class UI {
     }
   }
 
-  // 配方匹配
+  // 配方匹配 — 使用 crafting.js 的完整配方系统
   matchRecipe(grid) {
-    // 获取非空格子（归一化为左上对齐的图案）
-    const items = grid.filter(i => i !== null);
-
-    // 检查所有物品是否相同
-    if (items.length === 0) return null;
-    const firstId = items[0].id;
-
-    // 简化：只检查数量和类型
-    // 1 原木 -> 4 木板
-    if (items.length === 1 && items[0].id === BLOCK.LOG) {
-      return { id: BLOCK.PLANKS, count: 4 };
-    }
-
-    // 4 木板 (2x2) -> 1 工作台
-    if (items.length === 4 && items.every(i => i.id === BLOCK.PLANKS)) {
-      // 检查是否 2x2
-      const indices = [];
-      for (let i = 0; i < 9; i++) {
-        if (grid[i]) indices.push(i);
-      }
-      // 2x2 检查：索引在 0,1,3,4 或其他 2x2 位置
-      if (this.is2x2(indices)) {
-        return { id: BLOCK.CRAFTING_TABLE, count: 1 };
-      }
-    }
-
-    // 6 木板 -> 书架 (简化为6个木板)
-    if (items.length === 6 && items.every(i => i.id === BLOCK.PLANKS)) {
-      return { id: BLOCK.BOOKSHELF, count: 1 };
-    }
-
-    // 4 圆石 -> 砖块 (简化)
-    if (items.length === 4 && items.every(i => i.id === BLOCK.COBBLESTONE)) {
-      return { id: BLOCK.BRICK, count: 2 };
-    }
-
-    // 9 石头 -> 1 石头 (不消耗, 只做测试) — 实际不需要
-
-    return null;
-  }
-
-  is2x2(indices) {
-    // 检查是否构成 2x2 方形
-    const set = new Set(indices);
-    for (const start of [0, 1, 3, 4]) {
-      if (set.has(start) && set.has(start + 1) && set.has(start + 3) && set.has(start + 4)) {
-        return true;
-      }
-    }
-    return false;
+    return matchRecipeFromInventory(grid);
   }
 
   takeCraftingResult() {
     if (!this.currentCraftResult) return;
     const result = this.currentCraftResult;
-    this.game.player.addItem(result.id, result.count);
+
+    // 根据结果类型创建物品
+    if (result.resultType === 'tool') {
+      // 工具/武器
+      this.game.player.addItem(result.id, result.count);
+      // 记录工具属性
+      if (!this.game.player.toolData) this.game.player.toolData = {};
+      this.game.player.toolData[result.id] = {
+        toolType: result.toolType,
+        material: result.material,
+        name: result.name,
+        durability: (TOOL_MATERIAL[result.material.toUpperCase()] || {}).durability || 60,
+      };
+    } else if (result.resultType === 'armor') {
+      // 护甲
+      this.game.player.addItem(result.id, result.count);
+      if (!this.game.player.toolData) this.game.player.toolData = {};
+      this.game.player.toolData[result.id] = {
+        armorType: result.armorType,
+        material: result.material,
+        name: result.name,
+      };
+    } else if (result.recipe && result.recipe.id === 'shield') {
+      // 盾牌 — 存入 toolData 以便3D建模系统识别
+      this.game.player.addItem(result.id, result.count);
+      if (!this.game.player.toolData) this.game.player.toolData = {};
+      this.game.player.toolData[result.id] = {
+        toolType: 'shield',
+        material: 'iron',
+        name: result.name,
+      };
+    } else {
+      // 普通方块/物品
+      this.game.player.addItem(result.id, result.count);
+    }
 
     // 消耗合成材料
     for (let i = 0; i < 9; i++) {
@@ -523,6 +662,7 @@ export class UI {
     if (this.inventoryOpen) {
       this.game.input.exitPointerLock();
       this.updateInventoryDisplay();
+      this.updateExperiencePanelVisibility();
     } else {
       // 返回拖拽中的物品
       if (this.draggedSlot) {

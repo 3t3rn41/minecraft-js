@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { BLOCK_DEFS } from './blocks.js';
 import { GAMEMODE_NAMES } from './gamemodes.js';
+import { PlayerModel } from './playermodel.js';
 
 export class Multiplayer {
   constructor(game) {
@@ -171,6 +172,10 @@ export class Multiplayer {
       this.connections.set(conn.peer, conn);
       console.log('新连接:', conn.peer);
       // 世界数据在 player_join 时发送，确保客户端已准备好接收
+      // 通知房间发现服务更新人数
+      if (this.isHost && this.game.roomDiscovery) {
+        this.game.roomDiscovery.notifyPlayerJoined(this.connections.size + 1);
+      }
     };
 
     // 如果连接已打开，直接执行；否则等待 open 事件
@@ -189,6 +194,10 @@ export class Multiplayer {
       this.connections.delete(conn.peer);
       this.removeRemotePlayer(conn.peer);
       this.game.ui.showToast(`${conn.peer.substring(0, 6)} 离开了游戏`);
+      // 通知房间发现服务更新人数
+      if (this.isHost && this.game.roomDiscovery) {
+        this.game.roomDiscovery.notifyPlayerJoined(this.connections.size + 1);
+      }
     });
 
     conn.on('error', (err) => {
@@ -323,8 +332,13 @@ export class Multiplayer {
         }
         break;
 
-      case 'player_attack':
+      case 'player_attack': {
         // PvP 攻击
+        // 触发攻击者的挥臂动画
+        const attacker = this.remotePlayers.get(data.attackerId || conn.peer);
+        if (attacker) {
+          attacker.attackAnimTimer = 0.3;
+        }
         if (data.targetId === this.playerId) {
           this.game.player.takeDamage(data.damage);
           if (this.game.effects) {
@@ -341,6 +355,7 @@ export class Multiplayer {
           this.broadcast(data, conn.peer);
         }
         break;
+      }
 
       case 'chat':
         this.game.chat.addMessage(data.name, data.text);
@@ -352,7 +367,11 @@ export class Multiplayer {
       case 'world_data':
         // 客户端接收世界数据
         if (data.seed) {
+          // 清除用错误种子生成的所有区块
+          this.game.world.clearAllChunks(this.game.scene);
+          // 设置正确的种子
           this.game.world.seed = data.seed;
+          this.game.seed = data.seed;
           // 重新初始化噪声生成器
           this.game.world.noiseHeight = new this.game.world.noiseHeight.constructor(data.seed);
           this.game.world.noiseBiome = new this.game.world.noiseBiome.constructor(data.seed + 1000);
@@ -361,9 +380,22 @@ export class Multiplayer {
           this.game.world.noiseOre = new this.game.world.noiseOre.constructor(data.seed + 4000);
         }
         if (data.modifiedBlocks) {
+          this.game.world.modifiedBlocks.clear();
           for (const [key, blockId] of data.modifiedBlocks) {
             this.game.world.modifiedBlocks.set(key, blockId);
           }
+        }
+        // 设置出生点（与主机一致）
+        if (data.spawnPoint) {
+          this.game.spawnPoint = { ...data.spawnPoint };
+          this.game.player.position = { ...data.spawnPoint };
+        }
+        // 如果客户端跳过了 preloadChunks，现在用正确的种子生成区块
+        if (this.game._waitingForWorldData) {
+          this.game._waitingForWorldData = false;
+          this.game.preloadChunks().then(() => {
+            console.log('客户端世界数据同步完成，区块已生成');
+          });
         }
         break;
 
@@ -461,6 +493,7 @@ export class Multiplayer {
       type: 'world_data',
       seed: this.game.world.seed,
       modifiedBlocks: Array.from(this.game.world.modifiedBlocks.entries()),
+      spawnPoint: { ...this.game.spawnPoint },
     };
     conn.send(data);
   }
@@ -508,104 +541,51 @@ export class Multiplayer {
   addRemotePlayer(peerId, name) {
     if (this.remotePlayers.has(peerId)) return;
 
-    const group = new THREE.Group();
-
-    // 身体
-    const bodyGeom = new THREE.BoxGeometry(0.5, 0.7, 0.25);
-    const bodyMat = new THREE.MeshLambertMaterial({ color: 0x4444ff });
-    const body = new THREE.Mesh(bodyGeom, bodyMat);
-    body.position.y = 1.0;
-    group.add(body);
-
-    // 头
-    const headGeom = new THREE.BoxGeometry(0.4, 0.4, 0.4);
-    const headMat = new THREE.MeshLambertMaterial({ color: 0xffcc88 });
-    const head = new THREE.Mesh(headGeom, headMat);
-    head.position.y = 1.6;
-    group.add(head);
-
-    // 手臂
-    const armGeom = new THREE.BoxGeometry(0.15, 0.6, 0.15);
-    const armMat = new THREE.MeshLambertMaterial({ color: 0x4444ff });
-    const leftArm = new THREE.Mesh(armGeom, armMat);
-    leftArm.position.set(-0.35, 1.0, 0);
-    group.add(leftArm);
-    const rightArm = new THREE.Mesh(armGeom, armMat);
-    rightArm.position.set(0.35, 1.0, 0);
-    group.add(rightArm);
-
-    // 腿
-    const legGeom = new THREE.BoxGeometry(0.2, 0.6, 0.2);
-    const legMat = new THREE.MeshLambertMaterial({ color: 0x2a2a5a });
-    const leftLeg = new THREE.Mesh(legGeom, legMat);
-    leftLeg.position.set(-0.12, 0.35, 0);
-    group.add(leftLeg);
-    const rightLeg = new THREE.Mesh(legGeom, legMat);
-    rightLeg.position.set(0.12, 0.35, 0);
-    group.add(rightLeg);
-
-    // 名牌
-    const nameCanvas = document.createElement('canvas');
-    nameCanvas.width = 256;
-    nameCanvas.height = 64;
-    const nameCtx = nameCanvas.getContext('2d');
-    nameCtx.fillStyle = 'rgba(0,0,0,0.5)';
-    nameCtx.fillRect(0, 0, 256, 64);
-    nameCtx.fillStyle = '#fff';
-    nameCtx.font = 'bold 28px sans-serif';
-    nameCtx.textAlign = 'center';
-    nameCtx.fillText(name || 'Player', 128, 42);
-    const nameTexture = new THREE.CanvasTexture(nameCanvas);
-    const nameMat = new THREE.SpriteMaterial({ map: nameTexture, depthTest: false });
-    const nameSprite = new THREE.Sprite(nameMat);
-    nameSprite.position.y = 2.3;
-    nameSprite.scale.set(1.5, 0.4, 1);
-    group.add(nameSprite);
-
-    this.game.scene.add(group);
+    const model = new PlayerModel(name || 'Player');
+    this.game.scene.add(model.group);
 
     this.remotePlayers.set(peerId, {
-      mesh: group,
-      body: body,
-      head: head,
-      leftArm: leftArm,
-      rightArm: rightArm,
-      leftLeg: leftLeg,
-      rightLeg: rightLeg,
-      nameSprite: nameSprite,
+      model: model,
+      mesh: model.group,        // 兼容旧代码
+      body: model.body,         // 兼容旧代码
+      head: model.head,
+      leftArm: model.leftArm,
+      rightArm: model.rightArm,
+      leftLeg: model.leftLeg,
+      rightLeg: model.rightLeg,
+      nameSprite: model.nameSprite,
       name: name || 'Player',
       position: { x: 0, y: 0, z: 0 },
       yaw: 0,
+      bodyYaw: 0,              // 身体朝向（延迟跟随头部）
       pitch: 0,
       health: 20,
+      maxHealth: 20,
       gamemode: 0,
       sneaking: false,
       sprinting: false,
+      attackAnimTimer: 0,
+      heldItemId: null,         // 手持物品ID
+      toolData: {},             // 远程玩家的工具属性
       lastUpdate: Date.now(),
     });
   }
 
   // 更新远程玩家外观（根据游戏模式/生命值）
   updateRemotePlayerMesh(rp) {
-    if (!rp || !rp.body) return;
+    if (!rp || !rp.model) return;
     // 旁观模式：半透明
     if (rp.gamemode === 3) {
-      rp.body.material.transparent = true;
-      rp.body.material.opacity = 0.3;
-      rp.head.material.transparent = true;
-      rp.head.material.opacity = 0.3;
+      rp.model.setOpacity(0.3);
     } else {
-      rp.body.material.transparent = false;
-      rp.body.material.opacity = 1;
-      rp.head.material.transparent = false;
-      rp.head.material.opacity = 1;
+      rp.model.setOpacity(1);
     }
     // 低生命值：身体变红
     if (rp.health < 10 && rp.gamemode !== 3) {
       const redness = 1 - rp.health / 20;
-      rp.body.material.color.setRGB(0.3 + redness * 0.7, 0.3, 0.8 - redness * 0.8);
+      rp.model.setHurtFlash(redness);
     } else {
-      rp.body.material.color.setHex(0x4444ff);
+      rp.model.setHurtFlash(0);
     }
   }
 
@@ -628,13 +608,38 @@ export class Multiplayer {
 
     if (rp) {
       rp.position = data.position || rp.position;
+      rp.velocityX = data.velocityX !== undefined ? data.velocityX : (rp.velocityX || 0);
+      rp.velocityZ = data.velocityZ !== undefined ? data.velocityZ : (rp.velocityZ || 0);
       rp.yaw = data.yaw !== undefined ? data.yaw : rp.yaw;
       rp.pitch = data.pitch !== undefined ? data.pitch : rp.pitch;
       rp.health = data.health !== undefined ? data.health : rp.health;
+      rp.maxHealth = data.maxHealth !== undefined ? data.maxHealth : (rp.maxHealth || 20);
       rp.gamemode = data.gamemode !== undefined ? data.gamemode : rp.gamemode;
       rp.sneaking = data.sneaking !== undefined ? data.sneaking : rp.sneaking;
       rp.sprinting = data.sprinting !== undefined ? data.sprinting : rp.sprinting;
       rp.lastUpdate = Date.now();
+
+      // 同步手持物品
+      const newHeldItemId = data.heldItemId !== undefined ? data.heldItemId : null;
+      if (newHeldItemId !== rp.heldItemId) {
+        rp.heldItemId = newHeldItemId;
+        // 构建远程玩家的 toolData
+        if (!rp.toolData) rp.toolData = {};
+        if (newHeldItemId && data.heldToolType) {
+          // 为远程工具/护甲创建 toolData 条目
+          if (!rp.toolData[newHeldItemId]) {
+            const isArmor = ['helmet', 'chestplate', 'leggings', 'boots'].includes(data.heldToolType);
+            rp.toolData[newHeldItemId] = isArmor
+              ? { armorType: data.heldToolType, material: data.heldMaterial }
+              : { toolType: data.heldToolType, material: data.heldMaterial };
+          }
+        }
+        // 更新远程玩家模型的手持物品
+        if (rp.model) {
+          const atlasTexture = this.game.blockMaterial ? this.game.blockMaterial.map : null;
+          rp.model.setHeldItem(newHeldItemId, rp.toolData, atlasTexture);
+        }
+      }
 
       // 更新外观
       this.updateRemotePlayerMesh(rp);
@@ -646,6 +651,7 @@ export class Multiplayer {
     const rp = this.remotePlayers.get(peerId);
     if (rp && rp.mesh) {
       this.game.scene.remove(rp.mesh);
+      if (rp.model) rp.model.dispose();
     }
     this.remotePlayers.delete(peerId);
   }
@@ -660,17 +666,29 @@ export class Multiplayer {
 
       // 发送自己的位置和状态
       const player = this.game.player;
+      // 同步手持物品信息
+      const heldItem = player.getSelectedItem();
+      const heldItemId = heldItem ? heldItem.id : null;
+      const heldToolData = (heldItemId && player.toolData && player.toolData[heldItemId])
+        ? player.toolData[heldItemId] : null;
+
       this.sendToAll({
         type: 'player_state',
         id: this.playerId,
         name: this.playerName,
         position: { x: player.position.x, y: player.position.y, z: player.position.z },
+        velocityX: player.velocity.x,
+        velocityZ: player.velocity.z,
         yaw: player.yaw,
         pitch: player.pitch,
         health: player.health,
+        maxHealth: player.maxHealth,
         gamemode: player.gamemode,
         sneaking: player.sneaking,
         sprinting: player.sprinting,
+        heldItemId: heldItemId,
+        heldToolType: heldToolData ? (heldToolData.toolType || heldToolData.armorType) : null,
+        heldMaterial: heldToolData ? heldToolData.material : null,
       });
     }
 
@@ -693,31 +711,59 @@ export class Multiplayer {
     for (const [peerId, rp] of this.remotePlayers) {
       if (rp.mesh) {
         rp.mesh.position.lerp(new THREE.Vector3(rp.position.x, rp.position.y, rp.position.z), 0.2);
-        rp.mesh.rotation.y = rp.yaw;
 
-        // 潜行时身体降低
-        if (rp.body) {
-          const targetY = rp.sneaking ? 0.85 : 1.0;
-          rp.body.position.y += (targetY - rp.body.position.y) * 0.1;
+        // === 头部/身体分离扭动逻辑 ===
+        const maxHeadYaw = Math.PI / 3; // 60°
+        const isMoving = rp.sprinting || (now - rp.lastUpdate < 200 &&
+          (Math.abs(rp.velocityX || 0) > 0.1 || Math.abs(rp.velocityZ || 0) > 0.1));
+
+        if (isMoving) {
+          // 行走时身体立刻对齐视线方向
+          rp.bodyYaw = rp.yaw;
+        } else {
+          // 静止时：正常范围内仅头部转，超出范围后身体平滑跟随
+          let yawDiff = rp.yaw - rp.bodyYaw;
+          while (yawDiff > Math.PI) yawDiff -= Math.PI * 2;
+          while (yawDiff < -Math.PI) yawDiff += Math.PI * 2;
+
+          if (Math.abs(yawDiff) > maxHeadYaw) {
+            const targetBodyYaw = rp.yaw - Math.sign(yawDiff) * maxHeadYaw;
+            let bodyDiff = targetBodyYaw - rp.bodyYaw;
+            while (bodyDiff > Math.PI) bodyDiff -= Math.PI * 2;
+            while (bodyDiff < -Math.PI) bodyDiff += Math.PI * 2;
+            rp.bodyYaw += bodyDiff * 0.12;
+          }
+          while (rp.bodyYaw > Math.PI) rp.bodyYaw -= Math.PI * 2;
+          while (rp.bodyYaw < -Math.PI) rp.bodyYaw += Math.PI * 2;
         }
 
-        // 行走动画
-        const isMoving = rp.sprinting || (now - rp.lastUpdate < 200);
-        if (isMoving && rp.leftLeg && rp.rightLeg) {
-          const t = now * (rp.sprinting ? 0.012 : 0.008);
-          rp.leftLeg.rotation.x = Math.sin(t) * 0.4;
-          rp.rightLeg.rotation.x = -Math.sin(t) * 0.4;
-          if (rp.leftArm && rp.rightArm) {
-            rp.leftArm.rotation.x = -Math.sin(t) * 0.3;
-            rp.rightArm.rotation.x = Math.sin(t) * 0.3;
-          }
-        } else if (rp.leftLeg && rp.rightLeg) {
-          rp.leftLeg.rotation.x *= 0.8;
-          rp.rightLeg.rotation.x *= 0.8;
-          if (rp.leftArm && rp.rightArm) {
-            rp.leftArm.rotation.x *= 0.8;
-            rp.rightArm.rotation.x *= 0.8;
-          }
+        // 模型正面(+Z)与视线(-Z)相差180°
+        rp.mesh.rotation.y = rp.bodyYaw + Math.PI;
+
+        // 头部 Y轴 = 视线与身体差值，X轴 = 俯仰角
+        let headYawRel = rp.yaw - rp.bodyYaw;
+        while (headYawRel > Math.PI) headYawRel -= Math.PI * 2;
+        while (headYawRel < -Math.PI) headYawRel += Math.PI * 2;
+        if (rp.model && rp.model.head) {
+          rp.model.head.rotation.y = headYawRel;
+          rp.model.head.rotation.x = -(rp.pitch || 0);
+        }
+
+        // 攻击动画计时器
+        if (rp.attackAnimTimer > 0) {
+          rp.attackAnimTimer -= dt;
+        }
+
+        // 使用新的动画系统
+        if (rp.model) {
+          const isMoving = rp.sprinting || (now - rp.lastUpdate < 200 &&
+            (Math.abs(rp.velocityX || 0) > 0.1 || Math.abs(rp.velocityZ || 0) > 0.1));
+          rp.model.updateAnimation(dt, {
+            moving: isMoving,
+            sprinting: rp.sprinting,
+            sneaking: rp.sneaking,
+            attacking: rp.attackAnimTimer > 0,
+          });
         }
       }
 
@@ -832,6 +878,44 @@ export class Multiplayer {
     this.sendToAll({ type: 'potion_effect', targetId, effectId, name, duration, level, color });
   }
 
+  // 尝试攻击附近的远程玩家（PvP）
+  tryAttackRemotePlayers(player, reach = 2.5, damage = 1) {
+    if (!this.isConnected) return;
+    const eyePos = player.getEyePosition();
+    const dir = player.getLookDirection();
+
+    for (const [peerId, rp] of this.remotePlayers) {
+      // 旁观/创造模式不可被攻击
+      if (rp.gamemode === 3) continue;
+
+      const dx = rp.position.x - eyePos.x;
+      const dy = (rp.position.y + 0.9) - eyePos.y; // 身体中心
+      const dz = rp.position.z - eyePos.z;
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+      if (dist < reach) {
+        // 检查是否在视线方向上
+        const len = Math.max(0.001, dist);
+        const dot = (dx * dir.x + dy * dir.y + dz * dir.z) / len;
+        if (dot > 0.5) {
+          // 命中！发送攻击消息
+          this.sendToAll({
+            type: 'player_attack',
+            attackerId: this.playerId,
+            targetId: peerId,
+            damage: damage,
+          });
+          // 显示伤害数字
+          if (this.game.effects) {
+            this.game.effects.showDamageNumber(rp.position.x, rp.position.y + 1, rp.position.z, damage);
+          }
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   // 断开连接
   disconnect() {
     if (this.peer) {
@@ -846,6 +930,7 @@ export class Multiplayer {
     this.connections.clear();
     for (const rp of this.remotePlayers.values()) {
       if (rp.mesh) this.game.scene.remove(rp.mesh);
+      if (rp.model) rp.model.dispose();
     }
     this.remotePlayers.clear();
   }

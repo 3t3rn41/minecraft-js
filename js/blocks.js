@@ -167,6 +167,19 @@ export const BLOCK = {
   COOKED_BEEF: 161,
   COOKED_CHICKEN: 162,
   COOKED_MUTTON: 163,
+  // ===== 远程武器/弹药 =====
+  CROSSBOW: 164,
+  TRIDENT: 165,
+  SNOWBALL: 166,
+  EGG_ITEM: 167,
+  ENDER_PEARL: 168,
+  FIREWORK_ROCKET: 169,
+  SPECTRAL_ARROW: 170,
+  // ===== 枪械/弹药 =====
+  PISTOL: 171,
+  ROCKET_LAUNCHER: 172,
+  BULLET_ITEM: 173,
+  ROCKET_AMMO: 174,
 };
 
 // ===== 方块定义 =====
@@ -332,6 +345,19 @@ export const BLOCK_DEFS = {
   [BLOCK.COOKED_BEEF]: { name: '牛排', solid: false, transparent: true, textures: [158, 158, 158], drops: BLOCK.COOKED_BEEF, food: 8 },
   [BLOCK.COOKED_CHICKEN]: { name: '熟鸡肉', solid: false, transparent: true, textures: [159, 159, 159], drops: BLOCK.COOKED_CHICKEN, food: 6 },
   [BLOCK.COOKED_MUTTON]: { name: '熟羊肉', solid: false, transparent: true, textures: [160, 160, 160], drops: BLOCK.COOKED_MUTTON, food: 6 },
+  // ===== 远程武器/弹药 =====
+  [BLOCK.CROSSBOW]: { name: '弩', solid: false, transparent: true, textures: [161, 161, 161], drops: BLOCK.CROSSBOW },
+  [BLOCK.TRIDENT]: { name: '三叉戟', solid: false, transparent: true, textures: [162, 162, 162], drops: BLOCK.TRIDENT },
+  [BLOCK.SNOWBALL]: { name: '雪球', solid: false, transparent: true, textures: [163, 163, 163], drops: BLOCK.SNOWBALL },
+  [BLOCK.EGG_ITEM]: { name: '鸡蛋', solid: false, transparent: true, textures: [164, 164, 164], drops: BLOCK.EGG_ITEM },
+  [BLOCK.ENDER_PEARL]: { name: '末影珍珠', solid: false, transparent: true, textures: [165, 165, 165], drops: BLOCK.ENDER_PEARL },
+  [BLOCK.FIREWORK_ROCKET]: { name: '烟花火箭', solid: false, transparent: true, textures: [166, 166, 166], drops: BLOCK.FIREWORK_ROCKET },
+  [BLOCK.SPECTRAL_ARROW]: { name: '光灵箭', solid: false, transparent: true, textures: [167, 167, 167], drops: BLOCK.SPECTRAL_ARROW },
+  // ===== 枪械/弹药 =====
+  [BLOCK.PISTOL]: { name: '手枪', solid: false, transparent: true, textures: [168, 168, 168], drops: BLOCK.PISTOL },
+  [BLOCK.ROCKET_LAUNCHER]: { name: '火箭筒', solid: false, transparent: true, textures: [169, 169, 169], drops: BLOCK.ROCKET_LAUNCHER },
+  [BLOCK.BULLET_ITEM]: { name: '子弹', solid: false, transparent: true, textures: [170, 170, 170], drops: BLOCK.BULLET_ITEM },
+  [BLOCK.ROCKET_AMMO]: { name: '火箭弹', solid: false, transparent: true, textures: [171, 171, 171], drops: BLOCK.ROCKET_AMMO },
 };
 
 // ===== 可放置方块列表（用于背包） =====
@@ -372,6 +398,8 @@ export const PLACEABLE_BLOCKS = [
   // 食物物品
   BLOCK.RAW_PORKCHOP, BLOCK.RAW_BEEF, BLOCK.RAW_CHICKEN, BLOCK.RAW_MUTTON,
   BLOCK.COOKED_PORKCHOP, BLOCK.COOKED_BEEF, BLOCK.COOKED_CHICKEN, BLOCK.COOKED_MUTTON,
+  // 枪械/弹药
+  BLOCK.PISTOL, BLOCK.ROCKET_LAUNCHER, BLOCK.BULLET_ITEM, BLOCK.ROCKET_AMMO,
 ];
 
 // ===== 纹理图集 =====

@@ -20,7 +20,7 @@ export class CommandSystem {
     // /gamemode <mode> — 切换游戏模式
     this.register('gamemode', (args) => {
       const mode = this.parseGamemode(args[0]);
-      if (mode === null) return '用法: /gamemode <survival|creative|hardcore|spectator|skyblock>';
+      if (mode === null) return '用法: /gamemode <survival|creative|hardcore|spectator|skyblock|experience>';
       this.game.setGamemode(mode);
       return `游戏模式已切换为: ${GAMEMODE_NAMES[mode]}`;
     }, 'gm');
@@ -383,6 +383,7 @@ export class CommandSystem {
       '2': GAMEMODE.HARDCORE, 'hardcore': GAMEMODE.HARDCORE, 'h': GAMEMODE.HARDCORE,
       '3': GAMEMODE.SPECTATOR, 'spectator': GAMEMODE.SPECTATOR, 'sp': GAMEMODE.SPECTATOR,
       '4': GAMEMODE.SKYBLOCK, 'skyblock': GAMEMODE.SKYBLOCK, 'sb': GAMEMODE.SKYBLOCK,
+      '5': GAMEMODE.EXPERIENCE, 'experience': GAMEMODE.EXPERIENCE, 'exp': GAMEMODE.EXPERIENCE, 'e': GAMEMODE.EXPERIENCE,
     };
     return map[str?.toLowerCase()] ?? null;
   }

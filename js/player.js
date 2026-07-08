@@ -110,6 +110,10 @@ export class Player {
     if (this.gamemodeConfig.noclip) {
       this.flying = true;
     }
+    // 体验模式：给予初始物品（基础工具+武器+食物）
+    if (this.gamemodeConfig.experienceMode) {
+      this.fillExperienceInventory();
+    }
   }
 
   fillCreativeInventory() {
@@ -117,6 +121,21 @@ export class Player {
     for (let i = 0; i < PLACEABLE_BLOCKS.length && i < 36; i++) {
       this.inventory[i] = { id: PLACEABLE_BLOCKS[i], count: 64 };
     }
+  }
+
+  // 体验模式初始背包：基础工具、武器、食物
+  fillExperienceInventory() {
+    this.inventory = new Array(36).fill(null);
+    // 快捷栏：基础工具和武器
+    this.inventory[0] = { id: 148, count: 1 };  // 弓
+    this.inventory[1] = { id: 149, count: 64 }; // 箭矢
+    this.inventory[2] = { id: 164, count: 1 };  // 弩
+    this.inventory[3] = { id: 165, count: 1 };  // 三叉戟
+    this.inventory[4] = { id: 166, count: 64 }; // 雪球
+    this.inventory[5] = { id: 141, count: 32 }; // 面包
+    this.inventory[6] = { id: 142, count: 16 }; // 苹果
+    this.inventory[7] = { id: 15, count: 1 };   // 工作台
+    this.inventory[8] = { id: 5, count: 64 };   // 原木
   }
 
   // 获取护甲值

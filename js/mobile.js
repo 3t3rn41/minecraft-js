@@ -90,6 +90,7 @@ export class MobileControls {
         <div id="mb-jump" class="mobile-btn round mb-jump">⤴<span>跳</span></div>
         <div id="mb-sneak" class="mobile-btn round mb-sneak">⬇<span>潜行</span></div>
         <div id="mb-fly" class="mobile-btn round mb-fly">🪽<span>飞行</span></div>
+        <div id="mb-cam" class="mobile-btn round mb-cam">👁<span>视角</span></div>
         <div id="mb-inv" class="mobile-btn round mb-inv">🎒<span>背包</span></div>
         <div id="mb-chat" class="mobile-btn round mb-chat">💬<span>聊天</span></div>
       </div>
@@ -103,7 +104,7 @@ export class MobileControls {
     container.appendChild(ctrl);
 
     // 存储按钮引用
-    ['mb-jump', 'mb-sneak', 'mb-fly', 'mb-inv', 'mb-chat',
+    ['mb-jump', 'mb-sneak', 'mb-fly', 'mb-cam', 'mb-inv', 'mb-chat',
      'mb-slot-prev', 'mb-slot-next'].forEach(id => {
       this.buttons[id] = { pressed: false, el: document.getElementById(id) };
     });
@@ -289,6 +290,16 @@ export class MobileControls {
     // 聊天按钮：单次点击
     this.setupButton('mb-chat', null, () => {
       this.game.openChat();
+    });
+
+    // 视角切换按钮：单次点击
+    this.setupButton('mb-cam', null, () => {
+      this.game.cameraMode = (this.game.cameraMode + 1) % 3;
+      const modeNames = ['第一人称', '第三人称', '正面视角'];
+      if (this.game.ui) this.game.ui.showToast(`视角: ${modeNames[this.game.cameraMode]}`);
+      if (this.game.localPlayerModel) {
+        this.game.localPlayerModel.group.visible = this.game.cameraMode !== 0;
+      }
     });
 
     // 快捷栏切换（隐藏，改用直接点击）

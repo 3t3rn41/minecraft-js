@@ -161,6 +161,137 @@ box-sizing: border-box;
   word-break: break-all;
 }
 
+/* ===== 房间列表 ===== */
+.room-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+
+.room-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: rgba(90, 156, 61, 0.15);
+  border: 2px solid #3d7a25;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.room-card:hover {
+  background: rgba(90, 156, 61, 0.3);
+  border-color: #6abc4d;
+  transform: translateX(2px);
+}
+
+.room-card.joining {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.room-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.room-card-name {
+  color: #fff;
+  font-size: 15px;
+  font-weight: bold;
+  text-shadow: 1px 1px 0 #000;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-card-meta {
+  color: #aaa;
+  font-size: 12px;
+  display: flex;
+  gap: 10px;
+}
+
+.room-card-players {
+  color: #5a9c3d;
+  font-weight: bold;
+}
+
+.room-card-time {
+  color: #777;
+}
+
+.room-card-join-btn {
+  padding: 6px 18px;
+  font-size: 14px;
+  background: linear-gradient(180deg, #5a9c3d 0%, #3d7a25 100%);
+  color: #fff;
+  border: 2px solid #2a5a15;
+  border-radius: 4px;
+  cursor: pointer;
+  text-shadow: 1px 1px 0 #000;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.room-card-join-btn:hover {
+  background: linear-gradient(180deg, #6abc4d 0%, #4d9a35 100%);
+}
+
+.room-list-empty {
+  color: #666;
+  font-size: 14px;
+  text-align: center;
+  padding: 20px;
+  font-style: italic;
+}
+
+.discovery-status {
+  margin-bottom: 8px;
+  color: #ffd700 !important;
+}
+
+.discovery-status.connected {
+  color: #5a9c3d !important;
+}
+
+.discovery-status.error {
+  color: #cc3333 !important;
+}
+
+.room-count-badge {
+  display: inline-block;
+  background: #5a9c3d;
+  color: #fff;
+  font-size: 12px;
+  font-weight: bold;
+  padding: 1px 8px;
+  border-radius: 10px;
+  vertical-align: middle;
+  margin-left: 4px;
+}
+
+.manual-join-details {
+  margin-top: 8px;
+}
+
+.manual-join-details summary {
+  cursor: pointer;
+  user-select: none;
+  padding: 4px 0;
+}
+
+.manual-join-details summary:hover {
+  color: #5a9c3d;
+}
+
 /* ===== 设置界面 ===== */
 .settings-list {
   display: flex;
@@ -551,6 +682,107 @@ box-sizing: border-box;
   padding: 4px;
   border-bottom: 1px solid #333;
   color: #aaa;
+}
+
+/* ===== 体验模式物品面板 ===== */
+.experience-panel {
+  margin-top: 15px;
+  text-align: left;
+  max-height: 250px;
+  overflow-y: auto;
+  border: 1px solid #444;
+  border-radius: 4px;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.experience-panel h3 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  color: #ffd700;
+}
+
+.experience-hint {
+  font-size: 11px;
+  color: #888;
+  font-weight: normal;
+}
+
+.experience-search {
+  margin-bottom: 8px;
+}
+
+.experience-search input {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid #555;
+  border-radius: 4px;
+  background: #2a2a2a;
+  color: #eee;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.experience-search input:focus {
+  outline: none;
+  border-color: #ffd700;
+}
+
+.experience-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-content: flex-start;
+}
+
+.experience-item {
+  width: 52px;
+  height: 52px;
+  border: 2px solid #444;
+  border-radius: 4px;
+  background: #3a3a3a;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+  position: relative;
+  overflow: hidden;
+}
+
+.experience-item:hover {
+  border-color: #ffd700;
+  background: #4a4a3a;
+  transform: scale(1.08);
+}
+
+.experience-item:active {
+  transform: scale(0.95);
+}
+
+.experience-item .inv-slot-icon {
+  width: 32px;
+  height: 32px;
+  image-rendering: pixelated;
+}
+
+.experience-item-name {
+  font-size: 8px;
+  color: #ccc;
+  text-align: center;
+  max-width: 48px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 1px;
+}
+
+.experience-empty {
+  color: #888;
+  text-align: center;
+  padding: 20px;
+  font-size: 13px;
 }
 
 /* ===== 死亡画面 ===== */
@@ -1013,6 +1245,11 @@ body.mobile #mobile-controls {
   bottom: 220px;
 }
 
+#mb-cam {
+  right: 95px;
+  bottom: 170px;
+}
+
 #mb-mine {
   right: 100px;
   bottom: 20px;
@@ -1230,7 +1467,9 @@ body.mobile #crosshair {
   display: block;
 }
 
-/* ===== 手持方块显示（右下角） ===== */
+/* ===== 手持方块显示（已由3D视图模型取代，保持隐藏） ===== */
+/* 第一人称手持物品现由 HeldItemViewModel 在主画布上通过 scissor/viewport 渲染 */
+/* 第三人称手持物品由 PlayerModel.setHeldItem 在角色模型手中渲染 */
 #held-block-display {
   position: fixed;
   bottom: 90px;
@@ -1239,7 +1478,7 @@ body.mobile #crosshair {
   height: 72px;
   z-index: 10;
   pointer-events: none;
-  display: none;
+  display: none !important;
 }
 
 #held-block-display img {

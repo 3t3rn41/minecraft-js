@@ -23,6 +23,7 @@ export class EffectsManager {
 
   // ===== 爆炸 =====
   createExplosion(x, y, z, power = 4) {
+    console.log(`[EXPLOSION] createExplosion at (${x.toFixed(1)},${y.toFixed(1)},${z.toFixed(1)}), power=${power}`);
     // 1. 破坏方块
     const radius = power;
     for (let dx = -radius; dx <= radius; dx++) {
@@ -46,6 +47,35 @@ export class EffectsManager {
     }
 
     // 2. 伤害附近生物和玩家
+    // 2a. 伤害生物
+    if (this.game.mobs && this.game.mobs.mobs) {
+      for (const mob of this.game.mobs.mobs) {
+        const mobDist = Math.sqrt(
+          (mob.position.x - x) ** 2 +
+          (mob.position.y - y) ** 2 +
+          (mob.position.z - z) ** 2
+        );
+        if (mobDist < radius * 2) {
+          const damage = Math.floor((1 - mobDist / (radius * 2)) * power * 5);
+          if (damage > 0) {
+            mob.takeDamage(damage);
+            // 击退
+            const dx = mob.position.x - x;
+            const dy = mob.position.y - y + 0.5;
+            const dz = mob.position.z - z;
+            const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            if (len > 0) {
+              mob.velocity.x += (dx / len) * power * 3;
+              mob.velocity.y += (dy / len) * power * 3;
+              mob.velocity.z += (dz / len) * power * 3;
+            }
+            this.showDamageNumber(mob.position.x, mob.position.y + 1, mob.position.z, damage);
+          }
+        }
+      }
+    }
+
+    // 2b. 伤害玩家
     const player = this.game.player;
     const playerDist = Math.sqrt(
       (player.position.x - x) ** 2 +
@@ -290,6 +320,71 @@ export class EffectsManager {
         this.createExplosion(tnt.position.x, tnt.position.y, tnt.position.z, tnt.power);
       }
     }
+  }
+
+  // ===== 攻击挥砍特效 =====
+  createSlashEffect(x, y, z, dir, color = 0xffffff, weaponType = 'fist') {
+    const count = weaponType === 'sword' ? 16 : weaponType === 'trident' ? 20 : 10;
+    const geom = new THREE.BufferGeometry();
+    const positions = new Float32Array(count * 3);
+    const velocities = [];
+    const colors = new Float32Array(count * 3);
+
+    const c = new THREE.Color(color);
+
+    // 计算垂直于视线方向的平面
+    const up = new THREE.Vector3(0, 1, 0);
+    const forward = new THREE.Vector3(dir.x, dir.y, dir.z).normalize();
+    const right = new THREE.Vector3().crossVectors(forward, up).normalize();
+    const realUp = new THREE.Vector3().crossVectors(right, forward).normalize();
+
+    const arcSpread = weaponType === 'sword' ? 1.2 : 0.6;
+
+    for (let i = 0; i < count; i++) {
+      positions[i * 3] = x;
+      positions[i * 3 + 1] = y;
+      positions[i * 3 + 2] = z;
+
+      // 沿弧形方向喷射粒子
+      const angle = (i / count - 0.5) * arcSpread * 2;
+      const speed = 3 + Math.random() * 4;
+      const v = new THREE.Vector3()
+        .addScaledVector(forward, speed * 0.3)
+        .addScaledVector(right, Math.sin(angle) * speed)
+        .addScaledVector(realUp, Math.cos(angle) * speed * 0.5);
+
+      velocities.push({ x: v.x, y: v.y, z: v.z });
+
+      // 颜色变化
+      const brightness = 0.7 + Math.random() * 0.3;
+      colors[i * 3] = c.r * brightness;
+      colors[i * 3 + 1] = c.g * brightness;
+      colors[i * 3 + 2] = c.b * brightness;
+    }
+
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    const mat = new THREE.PointsMaterial({
+      size: weaponType === 'sword' ? 0.18 : 0.12,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.9,
+      fog: false,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+
+    const points = new THREE.Points(geom, mat);
+    this.scene.add(points);
+
+    this.particles.push({
+      mesh: points,
+      velocities,
+      life: 0,
+      maxLife: 0.35,
+      gravity: false,
+    });
   }
 
   // ===== 更新所有粒子 =====

@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>Minecraft JS - 我的世界浏览器版</title>
   <link rel="stylesheet" href="css/style.css">
   <script type="importmap">
@@ -23,7 +26,7 @@
       <button id="multiplayer-btn" class="menu-btn">多人联机</button>
       <button id="settings-btn-splash" class="menu-btn">设置</button>
       <button id="load-btn" class="menu-btn">读取存档</button>
-      <p class="version-text">v2.0.0 — 基于 Three.js · 含创造/生存/极限/旁观/空岛</p>
+      <p class="version-text">v2.1.0 — 基于 Three.js · 含创造/生存/极限/旁观/空岛/体验</p>
     </div>
   </div>
 
@@ -57,6 +60,11 @@
           <div class="gamemode-name">空岛模式</div>
           <div class="gamemode-desc">在浮空小岛上生存，资源有限</div>
         </div>
+        <div class="gamemode-card" data-gamemode="5">
+          <div class="gamemode-icon">🎁</div>
+          <div class="gamemode-name">体验模式</div>
+          <div class="gamemode-desc">免合成直接使用所有物品，自由探索</div>
+        </div>
       </div>
       <button id="gamemode-start-btn" class="menu-btn primary">开始游戏</button>
       <button id="gamemode-back-btn" class="menu-btn">返回</button>
@@ -79,20 +87,33 @@
       <div class="mp-divider">— 或 —</div>
       <div class="mp-section">
         <h3>创建房间（主机）</h3>
-        <p id="room-id-label">点击下方按钮创建房间</p>
-        <p id="room-id-wrapper" class="hidden">你的房间ID：<span id="room-id-display">生成中...</span></p>
+        <p id="room-id-label">点击下方按钮创建房间，同一网络下的其他玩家可自动发现</p>
+        <p id="room-id-wrapper" class="hidden">房间ID：<span id="room-id-display">生成中...</span></p>
         <button id="create-room-btn" class="menu-btn primary">创建房间</button>
         <button id="enter-host-game-btn" class="menu-btn primary hidden">进入游戏</button>
         <button id="copy-room-btn" class="menu-btn small hidden">复制ID</button>
-        <p class="hint" id="host-hint">创建房间后分享ID给其他玩家</p>
+        <p class="hint" id="host-hint">创建房间后，其他玩家可在下方房间列表中看到并加入。5分钟内无人加入将自动销毁。</p>
       </div>
       <div class="mp-divider">— 或 —</div>
       <div class="mp-section">
-        <h3>加入房间</h3>
-        <input type="text" id="join-room-input" placeholder="输入主机ID" class="text-input">
+        <h3>可用房间 <span id="room-count-badge" class="room-count-badge">0</span></h3>
+        <div id="discovery-status" class="hint discovery-status">正在搜索房间...</div>
+        <div id="room-list" class="room-list">
+          <!-- 房间卡片由JS动态生成 -->
+        </div>
+        <div id="room-list-empty" class="room-list-empty hidden">暂无可用房间</div>
+        <button id="refresh-rooms-btn" class="menu-btn small">刷新列表</button>
         <p id="join-status" class="hint hidden"></p>
-        <button id="join-room-btn" class="menu-btn primary">加入</button>
         <button id="enter-client-game-btn" class="menu-btn primary hidden">进入游戏</button>
+      </div>
+      <div class="mp-divider">— 或 —</div>
+      <div class="mp-section">
+        <h3>手动加入（高级）</h3>
+        <details class="manual-join-details">
+          <summary class="hint">点击展开手动输入ID加入</summary>
+          <input type="text" id="join-room-input" placeholder="输入主机ID" class="text-input" style="margin-top:8px">
+          <button id="join-room-btn" class="menu-btn small" style="margin-top:8px">加入</button>
+        </details>
       </div>
       <button id="mp-back-btn" class="menu-btn">返回</button>
     </div>
@@ -175,6 +196,14 @@
           <div class="crafting-output" id="crafting-output"></div>
         </div>
         <div class="recipe-list" id="recipe-list"></div>
+        <!-- 体验模式物品面板（仅体验模式显示） -->
+        <div class="experience-panel hidden" id="experience-panel">
+          <h3>物品面板 <span class="experience-hint">点击物品直接获取（免合成）</span></h3>
+          <div class="experience-search">
+            <input type="text" id="experience-search-input" placeholder="搜索物品名称..." />
+          </div>
+          <div class="experience-items" id="experience-items"></div>
+        </div>
         <button id="inv-close-btn" class="menu-btn">关闭 (E)</button>
       </div>
     </div>

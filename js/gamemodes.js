@@ -1,6 +1,6 @@
 /**
  * gamemodes.js — 游戏模式系统
- * 模式：生存(SURVIVAL) / 创造(CREATIVE) / 极限(HARDCORE) / 旁观(SPECTATOR) / 空岛(SKYBLOCK)
+ * 模式：生存(SURVIVAL) / 创造(CREATIVE) / 极限(HARDCORE) / 旁观(SPECTATOR) / 空岛(SKYBLOCK) / 体验(EXPERIENCE)
  */
 
 export const GAMEMODE = {
@@ -9,6 +9,7 @@ export const GAMEMODE = {
   HARDCORE: 2,
   SPECTATOR: 3,
   SKYBLOCK: 4,
+  EXPERIENCE: 5,
 };
 
 export const GAMEMODE_NAMES = {
@@ -17,6 +18,7 @@ export const GAMEMODE_NAMES = {
   [GAMEMODE.HARDCORE]: '极限模式',
   [GAMEMODE.SPECTATOR]: '旁观模式',
   [GAMEMODE.SKYBLOCK]: '空岛模式',
+  [GAMEMODE.EXPERIENCE]: '体验模式',
 };
 
 export const GAMEMODE_ICONS = {
@@ -25,6 +27,7 @@ export const GAMEMODE_ICONS = {
   [GAMEMODE.HARDCORE]: '💀',
   [GAMEMODE.SPECTATOR]: '👁️',
   [GAMEMODE.SKYBLOCK]: '🏝️',
+  [GAMEMODE.EXPERIENCE]: '🎁',
 };
 
 // 各模式的配置
@@ -97,6 +100,20 @@ export const GAMEMODE_CONFIG = {
     mobSpawning: false,
     deathAction: 'respawn',
     skyblockWorld: true,
+  },
+  [GAMEMODE.EXPERIENCE]: {
+    canFly: true,
+    canTakeDamage: false,
+    canBreakInstantly: true,
+    infiniteBlocks: true,
+    canPlaceBlocks: true,
+    canInteract: true,
+    healthRegen: true,
+    hungerEnabled: false,
+    keepInventory: true,
+    mobSpawning: true,
+    deathAction: 'none',
+    experienceMode: true, // 体验模式：免合成直接使用所有可合成物品
   },
 };
 

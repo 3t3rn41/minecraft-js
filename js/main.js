@@ -7,6 +7,7 @@ import { Game } from './game.js';
 import { SaveManager } from './save.js';
 import { GAMEMODE, GAMEMODE_NAMES, GAMEMODE_ICONS } from './gamemodes.js';
 import { isMobileDevice } from './mobile.js';
+import { RoomDiscovery } from './roomDiscovery.js';
 
 let game = null;
 let selectedGamemode = GAMEMODE.SURVIVAL;
@@ -16,6 +17,9 @@ let pendingPeer = null;
 let pendingRoomId = null;
 let pendingConnections = []; // [{ conn, bufferedMessages }]
 let pendingClientConn = null;
+
+// 房间发现服务
+let roomDiscovery = null;
 
 // 检测移动端并添加 body 类
 if (isMobileDevice()) {
@@ -62,6 +66,9 @@ async function loadPeerJS() {
 
 // ===== 清理待定的 Peer 连接 =====
 function cleanupPendingPeer() {
+  if (roomDiscovery && roomDiscovery.myRoomId) {
+    roomDiscovery.unregisterRoom();
+  }
   if (pendingPeer) {
     try { pendingPeer.destroy(); } catch (e) {}
     pendingPeer = null;
@@ -82,15 +89,17 @@ function resetMultiplayerUI() {
   const joinBtn = document.getElementById('join-room-btn');
   const enterClientBtn = document.getElementById('enter-client-game-btn');
   const joinStatus = document.getElementById('join-status');
+  const joinInput = document.getElementById('join-room-input');
 
   if (createBtn) { createBtn.textContent = '创建房间'; createBtn.disabled = false; createBtn.classList.remove('hidden'); }
-  if (enterHostBtn) enterHostBtn.classList.add('hidden');
+  if (enterHostBtn) { enterHostBtn.textContent = '进入游戏'; enterHostBtn.disabled = false; enterHostBtn.classList.add('hidden'); }
   if (copyBtn) copyBtn.classList.add('hidden');
   if (roomIdWrapper) roomIdWrapper.classList.add('hidden');
-  if (roomIdLabel) roomIdLabel.textContent = '点击下方按钮创建房间';
-  if (hostHint) hostHint.textContent = '创建房间后分享ID给其他玩家';
-  if (joinBtn) { joinBtn.textContent = '加入'; joinBtn.disabled = false; joinBtn.classList.remove('hidden'); }
-  if (enterClientBtn) enterClientBtn.classList.add('hidden');
+  if (roomIdLabel) roomIdLabel.textContent = '点击下方按钮创建房间，同一网络下的其他玩家可自动发现';
+  if (hostHint) hostHint.textContent = '创建房间后，其他玩家可在下方房间列表中看到并加入。5分钟内无人加入将自动销毁。';
+  if (joinBtn) { joinBtn.textContent = '加入'; joinBtn.disabled = false; }
+  if (joinInput) joinInput.value = '';
+  if (enterClientBtn) { enterClientBtn.textContent = '进入游戏'; enterClientBtn.disabled = false; enterClientBtn.classList.add('hidden'); }
   if (joinStatus) { joinStatus.textContent = ''; joinStatus.classList.add('hidden'); }
 }
 
@@ -138,6 +147,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('multiplayer-btn').addEventListener('click', () => {
     document.getElementById('splash-screen').classList.add('hidden');
     document.getElementById('multiplayer-screen').classList.remove('hidden');
+    startRoomDiscovery();
   });
 
   // 设置
@@ -155,6 +165,10 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('mp-back-btn').addEventListener('click', () => {
     cleanupPendingPeer();
     resetMultiplayerUI();
+    if (roomDiscovery) {
+      roomDiscovery.destroy();
+      roomDiscovery = null;
+    }
     document.getElementById('multiplayer-screen').classList.add('hidden');
     document.getElementById('splash-screen').classList.remove('hidden');
   });
@@ -219,10 +233,11 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.disabled = true;
     const statusEl = document.getElementById('join-status');
     statusEl.textContent = '正在连接到主机...';
+    statusEl.style.color = '#ffd700';
     statusEl.classList.remove('hidden');
     try {
       await connectToRoom(hostId);
-      statusEl.textContent = '连接成功！等待主机进入游戏后点击"进入游戏"';
+      statusEl.textContent = '连接成功！点击"进入游戏"';
       statusEl.style.color = '#5a9c3d';
       // 隐藏加入按钮，显示进入游戏按钮
       btn.classList.add('hidden');
@@ -248,7 +263,155 @@ document.addEventListener('DOMContentLoaded', () => {
       alert('进入游戏失败: ' + e.message);
     }
   });
+
+  // 刷新房间列表
+  document.getElementById('refresh-rooms-btn').addEventListener('click', () => {
+    if (roomDiscovery) {
+      if (roomDiscovery.isHub) {
+        updateRoomListUI(roomDiscovery._getRoomList());
+      } else if (roomDiscovery.hubConn && roomDiscovery.hubConn.open) {
+        roomDiscovery.hubConn.send({ type: 'get_rooms' });
+      } else {
+        // 未连接，尝试重新启动
+        startRoomDiscovery();
+      }
+    } else {
+      startRoomDiscovery();
+    }
+  });
 });
+
+// ===== 启动房间发现服务 =====
+async function startRoomDiscovery() {
+  if (roomDiscovery && roomDiscovery.isConnected) return;
+  if (roomDiscovery) {
+    roomDiscovery.destroy();
+    roomDiscovery = null;
+  }
+
+  roomDiscovery = new RoomDiscovery();
+  roomDiscovery.onRoomListUpdate = updateRoomListUI;
+  roomDiscovery.onRoomExpired = handleRoomExpired;
+  roomDiscovery.onHubConnected = () => {
+    const status = document.getElementById('discovery-status');
+    if (status) {
+      status.textContent = roomDiscovery.isHub ? '已就绪（房间协调者）' : '已连接，正在搜索房间...';
+      status.className = 'hint discovery-status connected';
+    }
+  };
+  roomDiscovery.onHubDisconnected = () => {
+    const status = document.getElementById('discovery-status');
+    if (status) {
+      status.textContent = '与服务器断开，正在重连...';
+      status.className = 'hint discovery-status error';
+    }
+  };
+
+  const status = document.getElementById('discovery-status');
+  if (status) {
+    status.textContent = '正在连接房间发现服务...';
+    status.className = 'hint discovery-status';
+    status.classList.remove('hidden');
+  }
+
+  try {
+    const role = await roomDiscovery.start();
+    if (status) {
+      status.textContent = role === 'hub' ? '已就绪（房间协调者）' : '已连接，正在搜索房间...';
+      status.className = 'hint discovery-status connected';
+    }
+  } catch (e) {
+    console.error('房间发现服务启动失败:', e);
+    if (status) {
+      status.textContent = '房间发现服务不可用（可使用手动加入）';
+      status.className = 'hint discovery-status error';
+    }
+  }
+}
+
+// ===== 更新房间列表UI =====
+function updateRoomListUI(rooms) {
+  const listEl = document.getElementById('room-list');
+  const emptyEl = document.getElementById('room-list-empty');
+  const badgeEl = document.getElementById('room-count-badge');
+  if (!listEl) return;
+
+  // 过滤掉自己的房间
+  const displayRooms = rooms.filter(r => r.hostId !== pendingRoomId);
+
+  if (badgeEl) badgeEl.textContent = displayRooms.length;
+
+  if (displayRooms.length === 0) {
+    listEl.innerHTML = '';
+    if (emptyEl) emptyEl.classList.remove('hidden');
+    return;
+  }
+
+  if (emptyEl) emptyEl.classList.add('hidden');
+  listEl.innerHTML = '';
+
+  for (const room of displayRooms) {
+    const card = document.createElement('div');
+    card.className = 'room-card';
+    card.dataset.hostId = room.hostId;
+
+    const elapsed = Math.floor((Date.now() - room.createdAt) / 1000);
+    const timeStr = elapsed < 60 ? `${elapsed}秒前` : `${Math.floor(elapsed / 60)}分钟前`;
+
+    card.innerHTML = `
+      <div class="room-card-info">
+        <div class="room-card-name">${escapeHtml(room.hostName)}</div>
+        <div class="room-card-meta">
+          <span class="room-card-players">👥 ${room.playerCount}人</span>
+          <span class="room-card-time">🕒 ${timeStr}</span>
+        </div>
+      </div>
+      <button class="room-card-join-btn">加入</button>
+    `;
+
+    card.querySelector('.room-card-join-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      joinRoomFromList(room.hostId, card);
+    });
+
+    listEl.appendChild(card);
+  }
+}
+
+// ===== 从房间列表加入房间 =====
+async function joinRoomFromList(hostId, card) {
+  if (card) card.classList.add('joining');
+  const statusEl = document.getElementById('join-status');
+  statusEl.textContent = '正在连接到主机...';
+  statusEl.style.color = '#ffd700';
+  statusEl.classList.remove('hidden');
+
+  try {
+    await connectToRoom(hostId);
+    statusEl.textContent = '连接成功！点击"进入游戏"';
+    statusEl.style.color = '#5a9c3d';
+    document.getElementById('enter-client-game-btn').classList.remove('hidden');
+    document.querySelectorAll('.room-card').forEach(c => c.classList.remove('joining'));
+  } catch (e) {
+    if (card) card.classList.remove('joining');
+    statusEl.textContent = '连接失败: ' + e.message;
+    statusEl.style.color = '#cc3333';
+  }
+}
+
+// ===== 房间过期处理（5分钟无人加入） =====
+function handleRoomExpired(roomId) {
+  alert('房间已超过5分钟无人加入，自动销毁。请重新创建房间。');
+  cleanupPendingPeer();
+  resetMultiplayerUI();
+}
+
+// ===== HTML转义工具 =====
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
 
 // ===== 获取设置 =====
 function getSettingsFromUI() {
@@ -282,6 +445,22 @@ async function createRoom() {
       pendingRoomId = id;
       console.log('房间已创建，ID:', id);
 
+      // 向房间发现服务注册
+      if (roomDiscovery && roomDiscovery.isConnected) {
+        const hostName = '玩家' + Math.floor(Math.random() * 1000);
+        roomDiscovery.registerRoom(id, hostName);
+        roomDiscovery.onRoomExpired = handleRoomExpired;
+      } else {
+        // 如果发现服务未连接，先启动再注册
+        startRoomDiscovery().then(() => {
+          if (roomDiscovery && roomDiscovery.isConnected) {
+            const hostName = '玩家' + Math.floor(Math.random() * 1000);
+            roomDiscovery.registerRoom(id, hostName);
+            roomDiscovery.onRoomExpired = handleRoomExpired;
+          }
+        }).catch(() => {});
+      }
+
       // 监听传入连接，缓冲消息直到游戏启动
       pendingPeer.on('connection', (conn) => {
         const bufferedMessages = [];
@@ -290,9 +469,17 @@ async function createRoom() {
         });
         conn.on('close', () => {
           pendingConnections = pendingConnections.filter(p => p.conn !== conn);
+          // 更新房间人数
+          if (roomDiscovery) {
+            roomDiscovery.notifyPlayerJoined(pendingConnections.length + 1);
+          }
         });
         pendingConnections.push({ conn, bufferedMessages });
         console.log('玩家连接（等待主机进入游戏）:', conn.peer);
+        // 更新房间人数
+        if (roomDiscovery) {
+          roomDiscovery.notifyPlayerJoined(pendingConnections.length + 1);
+        }
       });
 
       resolve(id);
@@ -318,12 +505,13 @@ async function enterMultiplayerHostGame() {
 
   game = new Game();
   game.settings = getSettingsFromUI();
+  game.roomDiscovery = roomDiscovery; // 传递给游戏，用于人数更新和退出时清理
   await game.init(false, 'multiplayer', GAMEMODE.SURVIVAL);
 
   // 使用已有的 Peer 连接和待处理的客户端连接
   const roomId = await game.multiplayer.hostRoom(pendingPeer, pendingRoomId, pendingConnections);
 
-  // 清理待定状态
+  // 清理待定状态（但不销毁 roomDiscovery，游戏内仍需保持心跳）
   pendingPeer = null;
   pendingRoomId = null;
   pendingConnections = [];
@@ -369,6 +557,8 @@ async function enterMultiplayerClientGame() {
 
   game = new Game();
   game.settings = getSettingsFromUI();
+  game.roomDiscovery = roomDiscovery;
+  game._isMultiplayerClient = true; // 标记为客户端，跳过区块生成直到收到主机种子
   await game.init(false, 'multiplayer', GAMEMODE.SURVIVAL);
 
   // 使用已有的 Peer 连接
@@ -385,8 +575,13 @@ window.addEventListener('beforeunload', () => {
   if (game) {
     if (game.multiplayer) game.multiplayer.disconnect();
     if (game.saveGame) game.saveGame();
+    if (game.roomDiscovery) game.roomDiscovery.destroy();
   }
   cleanupPendingPeer();
+  if (roomDiscovery) {
+    roomDiscovery.destroy();
+    roomDiscovery = null;
+  }
 });
 
 // ===== 快速小游戏 =====
