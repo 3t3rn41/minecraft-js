@@ -246,7 +246,6 @@ export class Game {
 
     // 创建远程武器系统
     this.ranged = new RangedSystem(this);
-    console.log('[GAME] RangedSystem initialized. Code version: 2024-07-08-v3');
 
     // 创建移动端控制系统
     this.isMobile = isMobileDevice();
@@ -678,22 +677,35 @@ export class Game {
       this.player.hotbarIndex = (this.player.hotbarIndex + wheel + 9) % 9;
     }
 
-    // 挖掘方块（左键持续）—— PC端和移动端共用
-    if (this.input.mouseButtons.left) {
-      this.startMining(dt);
-    } else {
+    // ===== 远程武器射击（左键）=====
+    // 手持远程武器时，左键射击；否则正常挖掘/攻击
+    const heldItem = this.player.getSelectedItem();
+    const isHoldingRangedWeapon = heldItem && this._isRangedWeapon(heldItem.id);
+
+    if (isHoldingRangedWeapon) {
+      // 远程武器：左键射击，不挖掘
       this.miningTarget = null;
       this.miningProgress = 0;
+      if (this.input.consumeLeftClick()) {
+        this.useRangedWeapon(heldItem.id);
+      }
+    } else {
+      // 挖掘方块（左键持续）—— PC端和移动端共用
+      if (this.input.mouseButtons.left) {
+        this.startMining(dt);
+      } else {
+        this.miningTarget = null;
+        this.miningProgress = 0;
+      }
     }
 
     // 放置方块（右键单击）—— PC端和移动端共用
     if (this.input.consumeRightClick()) {
-      console.log('[INPUT] rightClick consumed, calling placeBlock()');
       this.placeBlock();
     }
 
     // 攻击生物（左键单击）—— PC端
-    if (!this.isMobile && this.input.consumeLeftClick()) {
+    if (!isHoldingRangedWeapon && !this.isMobile && this.input.consumeLeftClick()) {
       this._attackAnimTimer = 0.3;
       // 触发第一人称手持物品挥动动画
       if (this.heldItemViewModel) this.heldItemViewModel.triggerSwing();
@@ -731,7 +743,7 @@ export class Game {
     }
 
     // 移动端：单次点击攻击（挖掘释放时触发）
-    if (this.isMobile && this.input.consumeLeftClick()) {
+    if (!isHoldingRangedWeapon && this.isMobile && this.input.consumeLeftClick()) {
       this._attackAnimTimer = 0.3;
       if (this.heldItemViewModel) this.heldItemViewModel.triggerSwing();
       const weaponStats = this.getWeaponStats();
@@ -1285,48 +1297,52 @@ export class Game {
   }
 
   // ===== 放置方块 =====
+  // 判断物品是否为远程武器
+  _isRangedWeapon(blockId) {
+    return blockId === BLOCK.BOW || blockId === BLOCK.CROSSBOW || blockId === BLOCK.TRIDENT ||
+      blockId === BLOCK.PISTOL || blockId === BLOCK.ROCKET_LAUNCHER ||
+      blockId === BLOCK.SNOWBALL || blockId === BLOCK.EGG_ITEM ||
+      blockId === BLOCK.ENDER_PEARL || blockId === BLOCK.FIREWORK_ROCKET;
+  }
+
+  // 使用远程武器（左键触发）
+  useRangedWeapon(blockId) {
+    if (blockId === BLOCK.BOW) {
+      this.useBow();
+    } else if (blockId === BLOCK.CROSSBOW) {
+      this.useCrossbow();
+    } else if (blockId === BLOCK.TRIDENT) {
+      this.useTrident();
+    } else if (blockId === BLOCK.PISTOL) {
+      this.usePistol();
+    } else if (blockId === BLOCK.ROCKET_LAUNCHER) {
+      this.useRocketLauncher();
+    } else if (blockId === BLOCK.SNOWBALL) {
+      if (this.ranged) this.ranged.throwItem(PROJECTILE_TYPE.SNOWBALL, { damage: 0, gravity: 1, maxLifetime: 15 });
+      if (this.heldItemViewModel) this.heldItemViewModel.triggerSwing();
+      this._attackAnimTimer = 0.2;
+    } else if (blockId === BLOCK.EGG_ITEM) {
+      if (this.ranged) this.ranged.throwItem(PROJECTILE_TYPE.EGG, { damage: 0, gravity: 1, maxLifetime: 15 });
+      if (this.heldItemViewModel) this.heldItemViewModel.triggerSwing();
+      this._attackAnimTimer = 0.2;
+    } else if (blockId === BLOCK.ENDER_PEARL) {
+      if (this.ranged) this.ranged.throwItem(PROJECTILE_TYPE.ENDER_PEARL, { damage: 0, gravity: 1, maxLifetime: 60 });
+      if (this.heldItemViewModel) this.heldItemViewModel.triggerSwing();
+      this._attackAnimTimer = 0.2;
+    } else if (blockId === BLOCK.FIREWORK_ROCKET) {
+      if (this.ranged) this.ranged.throwItem(PROJECTILE_TYPE.FIREWORK_ROCKET, { damage: 0, gravity: 0.3, maxLifetime: 20 });
+      if (this.heldItemViewModel) this.heldItemViewModel.triggerSwing();
+      this._attackAnimTimer = 0.2;
+    }
+  }
+
   placeBlock() {
     const item = this.player.getSelectedItem();
     const blockId = item ? item.id : 0;
-    console.log(`[PLACE_BLOCK] called, item=${item ? `id:${item.id} count:${item.count}` : 'null'}, blockId=${blockId}, BOW=${BLOCK.BOW}, PISTOL=${BLOCK.PISTOL}, ROCKET_LAUNCHER=${BLOCK.ROCKET_LAUNCHER}`);
 
-    // ===== 远程武器使用（优先处理，不受 canPlaceBlocks 限制）=====
-    if (blockId === BLOCK.BOW) {
-      this.useBow(item);
-      return;
-    }
-    if (blockId === BLOCK.CROSSBOW) {
-      this.useCrossbow(item);
-      return;
-    }
-    if (blockId === BLOCK.TRIDENT) {
-      this.useTrident(item);
-      return;
-    }
-    if (blockId === BLOCK.PISTOL) {
-      this.usePistol(item);
-      return;
-    }
-    if (blockId === BLOCK.ROCKET_LAUNCHER) {
-      this.useRocketLauncher(item);
-      return;
-    }
-    if (blockId === BLOCK.SNOWBALL) {
-      if (this.ranged) this.ranged.throwItem(PROJECTILE_TYPE.SNOWBALL, { damage: 0, gravity: 1, maxLifetime: 15 });
-      return;
-    }
-    if (blockId === BLOCK.EGG_ITEM) {
-      if (this.ranged) this.ranged.throwItem(PROJECTILE_TYPE.EGG, { damage: 0, gravity: 1, maxLifetime: 15 });
-      return;
-    }
-    if (blockId === BLOCK.ENDER_PEARL) {
-      if (this.ranged) this.ranged.throwItem(PROJECTILE_TYPE.ENDER_PEARL, { damage: 0, gravity: 1, maxLifetime: 60 });
-      return;
-    }
-    if (blockId === BLOCK.FIREWORK_ROCKET) {
-      if (this.ranged) this.ranged.throwItem(PROJECTILE_TYPE.FIREWORK_ROCKET, { damage: 0, gravity: 0.3, maxLifetime: 20 });
-      return;
-    }
+    // 远程武器已改为左键射击，右键不再触发武器
+    // 如果手持远程武器右键，不做任何事
+    if (this._isRangedWeapon(blockId)) return;
 
     // ===== 以下为普通方块放置逻辑 =====
     if (!this.currentRaycastHit && !item) return;
@@ -1428,7 +1444,6 @@ export class Game {
   // 使用弓 — 无限箭矢
   useBow(bowItem) {
     if (!this.ranged) return;
-    console.log('[RANGED] useBow called');
 
     // 触发第一人称挥动动画
     if (this.heldItemViewModel) this.heldItemViewModel.triggerSwing();
@@ -1463,7 +1478,6 @@ export class Game {
     });
 
     this.ranged.projectiles.push(projectile);
-    console.log(`[RANGED] crossbow bolt created, projectiles count=${this.ranged.projectiles.length}`);
 
     if (this.sound) this.sound.crossbow();
 
@@ -1496,7 +1510,6 @@ export class Game {
     });
 
     this.ranged.projectiles.push(projectile);
-    console.log(`[RANGED] trident created, projectiles count=${this.ranged.projectiles.length}`);
 
     if (this.sound) this.sound.trident();
 
@@ -1508,7 +1521,6 @@ export class Game {
 // 使用手枪 — 无限子弹
 usePistol(pistolItem) {
 if (!this.ranged) return;
-console.log('[RANGED] usePistol called');
 
 if (this.heldItemViewModel) this.heldItemViewModel.triggerSwing();
 this._attackAnimTimer = 0.15;
@@ -1519,7 +1531,6 @@ this.ranged.shootBullet();
   // 使用火箭筒 — 无限火箭弹
   useRocketLauncher(rlItem) {
     if (!this.ranged) return;
-    console.log('[RANGED] useRocketLauncher called');
 
     if (this.heldItemViewModel) this.heldItemViewModel.triggerSwing();
     this._attackAnimTimer = 0.5;

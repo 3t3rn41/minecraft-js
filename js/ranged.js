@@ -381,6 +381,22 @@ export class Projectile {
   constructor(game, type, x, y, z, dir, options = {}) {
     this.game = game;
     this.type = type;
+
+    // 验证生成位置 — 如果在方块内，沿视线方向前移直到找到空气
+    if (game && game.world) {
+      for (let i = 0; i < 6; i++) {
+        const bx = Math.floor(x);
+        const by = Math.floor(y);
+        const bz = Math.floor(z);
+        const block = game.world.getBlock(bx, by, bz);
+        if (block === 0) break;
+        // 沿视线方向前移0.5格
+        x += dir.x * 0.5;
+        y += dir.y * 0.5;
+        z += dir.z * 0.5;
+      }
+    }
+
     this.position = { x, y, z };
     this.velocity = {
       x: dir.x * (options.speed || 30),
@@ -406,6 +422,10 @@ export class Projectile {
     this.trailPoints = [];
     this.maxTrailPoints = 30;
     this.particleTimer = 0;
+
+    // 卡在方块中的计时
+    this.stuckTimer = 0;
+    this.stuckDuration = 5; // 卡在方块中5秒后消失
 
     // 旋转动画参数
     this._spinSpeed = options.spinSpeed || 0;
@@ -442,9 +462,6 @@ export class Projectile {
     // 立即添加到场景
     if (this.game.scene) {
       this.game.scene.add(this.mesh);
-      console.log(`[PROJECTILE] mesh added to scene: type=${this.type}, pos=(${this.position.x.toFixed(1)}, ${this.position.y.toFixed(1)}, ${this.position.z.toFixed(1)}), children=${this.mesh.children.length}`);
-    } else {
-      console.error('[PROJECTILE] game.scene is null! Cannot add mesh.');
     }
   }
 
@@ -517,13 +534,10 @@ export class Projectile {
 
   update(dt) {
     if (this.dead) return;
-    if (this.lifetime === 0) {
-      const blockX = Math.floor(this.position.x);
-      const blockY = Math.floor(this.position.y);
-      const blockZ = Math.floor(this.position.z);
-      const block = this.game.world.getBlock(blockX, blockY, blockZ);
-      console.log(`[PROJECTILE] first update: type=${this.type}, pos=(${this.position.x.toFixed(2)},${this.position.y.toFixed(2)},${this.position.z.toFixed(2)}), vel=(${this.velocity.x.toFixed(1)},${this.velocity.y.toFixed(1)},${this.velocity.z.toFixed(1)}), speed=${Math.sqrt(this.velocity.x**2+this.velocity.y**2+this.velocity.z**2).toFixed(1)}, mesh=${!!this.mesh}, inScene=${this.mesh ? this.game.scene.children.includes(this.mesh) : 'N/A'}, blockAtPos=${block}, inGround=${this.inGround}, dt=${dt.toFixed(4)}`);
-    }
+
+    // 确保 dt 有效
+    if (!dt || dt <= 0) dt = 0.016;
+
     this.lifetime += dt;
     if (this.lifetime > this.maxLifetime) {
       this.dead = true;
@@ -531,7 +545,16 @@ export class Projectile {
     }
 
     if (this.inGround) {
-      if (this.lifetime > this.maxLifetime * 0.5) {
+      this.stuckTimer += dt;
+      // 渐隐轨迹线 — 0.4秒内消失
+      if (this.trail && this.trail.material.opacity > 0) {
+        this.trail.material.opacity = Math.max(0, 0.8 - this.stuckTimer * 2);
+        if (this.trail.material.opacity <= 0) {
+          this.trail.visible = false;
+        }
+      }
+      // stuckDuration秒后消失
+      if (this.stuckTimer > this.stuckDuration) {
         this.dead = true;
       }
       return;
@@ -563,13 +586,35 @@ export class Projectile {
     // 飞行粒子特效
     this._updateFlightParticles(dt);
 
-    // 方块碰撞检测
-    const blockX = Math.floor(this.position.x);
-    const blockY = Math.floor(this.position.y);
-    const blockZ = Math.floor(this.position.z);
-    const block = this.game.world.getBlock(blockX, blockY, blockZ);
-    if (block !== 0) {
-      this.onBlockHit(blockX, blockY, blockZ);
+    // 方块碰撞检测 — 使用扫掠检测，避免高速穿透
+    if (this.lifetime > 0.05) {
+      const moveX = this.velocity.x * dt;
+      const moveY = this.velocity.y * dt;
+      const moveZ = this.velocity.z * dt;
+      const moveDist = Math.sqrt(moveX * moveX + moveY * moveY + moveZ * moveZ);
+      const numSteps = Math.max(1, Math.ceil(moveDist * 2)); // 每0.5格检查一次
+      const oldX = this.position.x - moveX;
+      const oldY = this.position.y - moveY;
+      const oldZ = this.position.z - moveZ;
+
+      for (let s = 1; s <= numSteps; s++) {
+        const t = s / numSteps;
+        const cx = Math.floor(oldX + moveX * t);
+        const cy = Math.floor(oldY + moveY * t);
+        const cz = Math.floor(oldZ + moveZ * t);
+        const block = this.game.world.getBlock(cx, cy, cz);
+        if (block !== 0) {
+          // 回退到碰撞点
+          this.position.x = oldX + moveX * t;
+          this.position.y = oldY + moveY * t;
+          this.position.z = oldZ + moveZ * t;
+          if (this.mesh) {
+            this.mesh.position.set(this.position.x, this.position.y, this.position.z);
+          }
+          this.onBlockHit(cx, cy, cz);
+          break;
+        }
+      }
     }
 
     // 实体碰撞检测
@@ -664,6 +709,8 @@ export class Projectile {
   }
 
   onBlockHit(x, y, z) {
+    console.log('[Projectile] onBlockHit:', this.type, 'at', x, y, z, 'effects:', !!this.game.effects);
+
     if (this.onHitBlock) {
       this.onHitBlock(x, y, z, this);
       return;
@@ -675,35 +722,53 @@ export class Projectile {
       case PROJECTILE_TYPE.TRIDENT:
       case PROJECTILE_TYPE.CROSSBOW_BOLT:
         this.inGround = true;
+        this.stuckTimer = 0;
         this.velocity = { x: 0, y: 0, z: 0 };
         if (this.game.effects) {
-          this.game.effects.createBlockBreakParticles(x, y, z, this._getTrailColor());
+          try {
+            this.game.effects.createBlockBreakParticles(x, y, z, this._getTrailColor());
+          } catch (e) {
+            console.error('[Projectile] createBlockBreakParticles error:', e);
+          }
         }
         break;
 
       case PROJECTILE_TYPE.BULLET:
         if (this.game.effects) {
-          for (let i = 0; i < 3; i++) {
-            this.game.effects.createBlockBreakParticles(x, y, z, 0xffdd44);
+          try {
+            for (let i = 0; i < 3; i++) {
+              this.game.effects.createBlockBreakParticles(x, y, z, 0xffdd44);
+            }
+          } catch (e) {
+            console.error('[Projectile] BULLET particles error:', e);
           }
         }
         this.dead = true;
         break;
 
-case PROJECTILE_TYPE.ROCKET:
-console.log(`[PROJECTILE] ROCKET hit block at (${x},${y},${z}), creating explosion power=4`);
-if (this.game.effects) {
-this.game.effects.createExplosion(this.position.x, this.position.y, this.position.z, 4);
-} else {
-console.error('[PROJECTILE] game.effects is null! Cannot create explosion.');
-}
-this.dead = true;
-break;
+      case PROJECTILE_TYPE.ROCKET:
+        console.log('[Projectile] ROCKET hit, calling createExplosion at', this.position.x, this.position.y, this.position.z);
+        if (this.game.effects) {
+          try {
+            this.game.effects.createExplosion(this.position.x, this.position.y, this.position.z, 4);
+            console.log('[Projectile] createExplosion completed successfully');
+          } catch (e) {
+            console.error('[Projectile] createExplosion error:', e);
+          }
+        } else {
+          console.warn('[Projectile] this.game.effects is falsy! game:', !!this.game);
+        }
+        this.dead = true;
+        break;
 
-case PROJECTILE_TYPE.SNOWBALL:
+      case PROJECTILE_TYPE.SNOWBALL:
       case PROJECTILE_TYPE.EGG:
         if (this.game.effects) {
-          this.game.effects.createBlockBreakParticles(x, y, z, 0xffffff);
+          try {
+            this.game.effects.createBlockBreakParticles(x, y, z, 0xffffff);
+          } catch (e) {
+            console.error('[Projectile] SNOWBALL/EGG particles error:', e);
+          }
         }
         if (this.type === PROJECTILE_TYPE.EGG && Math.random() < 0.125) {
           if (this.game.mobs) {
@@ -721,10 +786,14 @@ case PROJECTILE_TYPE.SNOWBALL:
             this.owner.takeDamage(5);
           }
           if (this.game.effects) {
-            this.game.effects.createBlockBreakParticles(x, y, z, 0x00aa44);
-            this.game.effects.createBlockBreakParticles(
-              Math.floor(this.owner.position.x), Math.floor(this.owner.position.y), Math.floor(this.owner.position.z), 0x00aa44
-            );
+            try {
+              this.game.effects.createBlockBreakParticles(x, y, z, 0x00aa44);
+              this.game.effects.createBlockBreakParticles(
+                Math.floor(this.owner.position.x), Math.floor(this.owner.position.y), Math.floor(this.owner.position.z), 0x00aa44
+              );
+            } catch (e) {
+              console.error('[Projectile] ENDER_PEARL particles error:', e);
+            }
           }
         }
         this.dead = true;
@@ -732,34 +801,47 @@ case PROJECTILE_TYPE.SNOWBALL:
 
       case PROJECTILE_TYPE.FIREBALL:
         if (this.game.effects) {
-          this.game.effects.createExplosion(this.position.x, this.position.y, this.position.z, 2);
+          try {
+            this.game.effects.createExplosion(this.position.x, this.position.y, this.position.z, 2);
+          } catch (e) {
+            console.error('[Projectile] FIREBALL explosion error:', e);
+          }
         }
         this.dead = true;
         break;
 
       case PROJECTILE_TYPE.WITHER_SKULL:
         if (this.game.effects) {
-          this.game.effects.createExplosion(this.position.x, this.position.y, this.position.z, 1);
+          try {
+            this.game.effects.createExplosion(this.position.x, this.position.y, this.position.z, 1);
+          } catch (e) {
+            console.error('[Projectile] WITHER_SKULL explosion error:', e);
+          }
         }
         this.dead = true;
         break;
 
       case PROJECTILE_TYPE.FIREWORK_ROCKET:
         if (this.game.effects) {
-          this.game.effects.createBlockBreakParticles(x, y, z, 0xff6688);
-          this.game.effects.createBlockBreakParticles(x, y, z, 0xffcc00);
-          this.game.effects.createBlockBreakParticles(x, y, z, 0x44ff44);
+          try {
+            this.game.effects.createBlockBreakParticles(x, y, z, 0xff6688);
+            this.game.effects.createBlockBreakParticles(x, y, z, 0xffcc00);
+            this.game.effects.createBlockBreakParticles(x, y, z, 0x44ff44);
+          } catch (e) {
+            console.error('[Projectile] FIREWORK particles error:', e);
+          }
         }
         this.dead = true;
         break;
 
       default:
+        console.warn('[Projectile] Unknown type in onBlockHit:', this.type);
         this.dead = true;
     }
   }
 
   checkEntityCollision() {
-    if (!this.game.mobs) return;
+    if (!this.game.mobs || !this.game.mobs.mobs) return;
 
     for (const mob of this.game.mobs.mobs) {
       if (this.hitEntities.has(mob.id)) continue;
@@ -911,7 +993,6 @@ export class RangedSystem {
   constructor(game) {
     this.game = game;
     this.projectiles = [];
-    console.log('[RANGED] RangedSystem constructed. Code version: 2024-07-08-v3');
     this.bowChargeTime = 0;
     this.isCharging = false;
     this.trajectoryLine = null;
@@ -952,6 +1033,7 @@ export class RangedSystem {
 
   // 射击子弹（手枪）— 无限子弹
   shootBullet() {
+    console.log('[RangedSystem] shootBullet called');
     const eye = this.game.player.getEyePosition();
     const dir = this.game.player.getLookDirection();
 
@@ -986,9 +1068,9 @@ export class RangedSystem {
 
   // 射击火箭弹（火箭筒）— 无限火箭弹
   shootRocket() {
+    console.log('[RangedSystem] shootRocket called');
     const eye = this.game.player.getEyePosition();
     const dir = this.game.player.getLookDirection();
-    console.log(`[RANGED] shootRocket: eye=(${eye.x.toFixed(1)},${eye.y.toFixed(1)},${eye.z.toFixed(1)}), dir=(${dir.x.toFixed(2)},${dir.y.toFixed(2)},${dir.z.toFixed(2)})`);
 
     const speed = 40;
     const damage = 15;
@@ -1008,7 +1090,7 @@ export class RangedSystem {
     });
 
     this.projectiles.push(rocket);
-    console.log(`[RANGED] rocket created, projectiles count=${this.projectiles.length}`);
+    console.log('[RangedSystem] Rocket projectile created, total projectiles:', this.projectiles.length);
 
     if (this.game.sound) this.game.sound.explosion();
 
@@ -1177,22 +1259,26 @@ export class RangedSystem {
     }
   }
 
-update(dt) {
-if (this.isCharging) {
-this.bowChargeTime += dt;
-this.updateTrajectoryPreview();
-}
+  update(dt) {
+    if (this.isCharging) {
+      this.bowChargeTime += dt;
+      this.updateTrajectoryPreview();
+    }
 
-for (let i = this.projectiles.length - 1; i >= 0; i--) {
-const proj = this.projectiles[i];
-proj.update(dt);
-if (proj.dead) {
-console.log(`[PROJECTILE] ${proj.type} died at (${proj.position.x.toFixed(1)},${proj.position.y.toFixed(1)},${proj.position.z.toFixed(1)}), lifetime=${proj.lifetime.toFixed(1)}`);
-proj.destroy();
-this.projectiles.splice(i, 1);
-}
-}
-}
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const proj = this.projectiles[i];
+      try {
+        proj.update(dt);
+      } catch (e) {
+        console.warn('[RangedSystem] 投射物更新出错:', e);
+        proj.dead = true;
+      }
+      if (proj.dead) {
+        proj.destroy();
+        this.projectiles.splice(i, 1);
+      }
+    }
+  }
 
   clear() {
     for (const proj of this.projectiles) {

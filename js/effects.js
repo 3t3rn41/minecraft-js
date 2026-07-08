@@ -23,100 +23,134 @@ export class EffectsManager {
 
   // ===== 爆炸 =====
   createExplosion(x, y, z, power = 4) {
-    console.log(`[EXPLOSION] createExplosion at (${x.toFixed(1)},${y.toFixed(1)},${z.toFixed(1)}), power=${power}`);
-    // 1. 破坏方块
+    console.log('[Effects] createExplosion called at', x, y, z, 'power:', power, 'world:', !!this.game.world, 'scene:', !!this.scene);
+
     const radius = power;
-    for (let dx = -radius; dx <= radius; dx++) {
-      for (let dy = -radius; dy <= radius; dy++) {
-        for (let dz = -radius; dz <= radius; dz++) {
-          const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-          if (dist > radius) continue;
-          const bx = Math.floor(x + dx);
-          const by = Math.floor(y + dy);
-          const bz = Math.floor(z + dz);
-          const block = this.game.world.getBlock(bx, by, bz);
-          if (block === 0) continue;
-          const def = BLOCK_DEFS[block];
-          if (def && def.name === '基岩') continue;
-          // 越近破坏概率越高
-          if (Math.random() > dist / radius * 0.5) {
-            this.game.world.setBlock(bx, by, bz, 0);
+
+    // 1. 破坏方块
+    try {
+      for (let dx = -radius; dx <= radius; dx++) {
+        for (let dy = -radius; dy <= radius; dy++) {
+          for (let dz = -radius; dz <= radius; dz++) {
+            const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            if (dist > radius) continue;
+            const bx = Math.floor(x + dx);
+            const by = Math.floor(y + dy);
+            const bz = Math.floor(z + dz);
+            const block = this.game.world.getBlock(bx, by, bz);
+            if (block === 0) continue;
+            const def = BLOCK_DEFS[block];
+            if (def && def.name === '基岩') continue;
+            // 越近破坏概率越高
+            if (Math.random() > dist / radius * 0.5) {
+              this.game.world.setBlock(bx, by, bz, 0);
+            }
           }
         }
       }
+    } catch (e) {
+      console.error('[Effects] Block destruction error:', e);
     }
 
     // 2. 伤害附近生物和玩家
     // 2a. 伤害生物
-    if (this.game.mobs && this.game.mobs.mobs) {
-      for (const mob of this.game.mobs.mobs) {
-        const mobDist = Math.sqrt(
-          (mob.position.x - x) ** 2 +
-          (mob.position.y - y) ** 2 +
-          (mob.position.z - z) ** 2
-        );
-        if (mobDist < radius * 2) {
-          const damage = Math.floor((1 - mobDist / (radius * 2)) * power * 5);
-          if (damage > 0) {
-            mob.takeDamage(damage);
-            // 击退
-            const dx = mob.position.x - x;
-            const dy = mob.position.y - y + 0.5;
-            const dz = mob.position.z - z;
-            const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
-            if (len > 0) {
-              mob.velocity.x += (dx / len) * power * 3;
-              mob.velocity.y += (dy / len) * power * 3;
-              mob.velocity.z += (dz / len) * power * 3;
+    try {
+      if (this.game.mobs && this.game.mobs.mobs) {
+        for (const mob of this.game.mobs.mobs) {
+          const mobDist = Math.sqrt(
+            (mob.position.x - x) ** 2 +
+            (mob.position.y - y) ** 2 +
+            (mob.position.z - z) ** 2
+          );
+          if (mobDist < radius * 2) {
+            const damage = Math.floor((1 - mobDist / (radius * 2)) * power * 5);
+            if (damage > 0) {
+              mob.takeDamage(damage);
+              // 击退
+              const dx = mob.position.x - x;
+              const dy = mob.position.y - y + 0.5;
+              const dz = mob.position.z - z;
+              const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+              if (len > 0) {
+                mob.velocity.x += (dx / len) * power * 3;
+                mob.velocity.y += (dy / len) * power * 3;
+                mob.velocity.z += (dz / len) * power * 3;
+              }
+              this.showDamageNumber(mob.position.x, mob.position.y + 1, mob.position.z, damage);
             }
-            this.showDamageNumber(mob.position.x, mob.position.y + 1, mob.position.z, damage);
           }
         }
       }
+    } catch (e) {
+      console.error('[Effects] Mob damage error:', e);
     }
 
     // 2b. 伤害玩家
-    const player = this.game.player;
-    const playerDist = Math.sqrt(
-      (player.position.x - x) ** 2 +
-      (player.position.y - y) ** 2 +
-      (player.position.z - z) ** 2
-    );
-    if (playerDist < radius * 2) {
-      const damage = Math.floor((1 - playerDist / (radius * 2)) * power * 5);
-      if (damage > 0) {
-        player.takeDamage(damage);
-        // 击退
-        const dx = player.position.x - x;
-        const dy = player.position.y - y + 0.5;
-        const dz = player.position.z - z;
-        const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (len > 0) {
-          player.velocity.x += (dx / len) * power * 3;
-          player.velocity.y += (dy / len) * power * 3;
-          player.velocity.z += (dz / len) * power * 3;
+    try {
+      const player = this.game.player;
+      if (player) {
+        const playerDist = Math.sqrt(
+          (player.position.x - x) ** 2 +
+          (player.position.y - y) ** 2 +
+          (player.position.z - z) ** 2
+        );
+        if (playerDist < radius * 2) {
+          const damage = Math.floor((1 - playerDist / (radius * 2)) * power * 5);
+          if (damage > 0) {
+            player.takeDamage(damage);
+            // 击退
+            const dx = player.position.x - x;
+            const dy = player.position.y - y + 0.5;
+            const dz = player.position.z - z;
+            const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            if (len > 0) {
+              player.velocity.x += (dx / len) * power * 3;
+              player.velocity.y += (dy / len) * power * 3;
+              player.velocity.z += (dz / len) * power * 3;
+            }
+          }
         }
       }
+    } catch (e) {
+      console.error('[Effects] Player damage error:', e);
     }
 
     // 3. 爆炸粒子
-    this.createExplosionParticles(x, y, z, power);
+    try {
+      this.createExplosionParticles(x, y, z, power);
+    } catch (e) {
+      console.error('[Effects] Explosion particles error:', e);
+    }
 
     // 4. 闪光
-    this.createFlash(x, y, z, power);
+    try {
+      this.createFlash(x, y, z, power);
+    } catch (e) {
+      console.error('[Effects] Flash error:', e);
+    }
 
     // 5. 屏幕震动
     this.screenShake = power * 0.3;
 
     // 6. 声效模拟（toast）
-    if (playerDist < 20) {
-      this.game.ui.showToast('💥 BOOM!');
+    try {
+      if (this.game.ui && this.game.ui.showToast) {
+        this.game.ui.showToast('💥 BOOM!');
+      }
+    } catch (e) {
+      console.error('[Effects] Toast error:', e);
     }
 
     // 多人同步
-    if (this.game.multiplayer) {
-      this.game.multiplayer.sendExplosion(x, y, z, power);
+    try {
+      if (this.game.multiplayer) {
+        this.game.multiplayer.sendExplosion(x, y, z, power);
+      }
+    } catch (e) {
+      console.error('[Effects] Multiplayer sync error:', e);
     }
+
+    console.log('[Effects] createExplosion completed');
   }
 
   createExplosionParticles(x, y, z, power) {

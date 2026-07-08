@@ -180,6 +180,9 @@ export const BLOCK = {
   ROCKET_LAUNCHER: 172,
   BULLET_ITEM: 173,
   ROCKET_AMMO: 174,
+  // ===== 水生植物 =====
+  SEAGRASS: 175,
+  KELP: 176,
 };
 
 // ===== 方块定义 =====
@@ -358,6 +361,9 @@ export const BLOCK_DEFS = {
   [BLOCK.ROCKET_LAUNCHER]: { name: '火箭筒', solid: false, transparent: true, textures: [169, 169, 169], drops: BLOCK.ROCKET_LAUNCHER },
   [BLOCK.BULLET_ITEM]: { name: '子弹', solid: false, transparent: true, textures: [170, 170, 170], drops: BLOCK.BULLET_ITEM },
   [BLOCK.ROCKET_AMMO]: { name: '火箭弹', solid: false, transparent: true, textures: [171, 171, 171], drops: BLOCK.ROCKET_AMMO },
+// ===== 水生植物 =====
+[BLOCK.SEAGRASS]: { name: '海草', solid: false, transparent: true, textures: [172, 172, 172], drops: BLOCK.SEAGRASS },
+[BLOCK.KELP]: { name: '海带', solid: false, transparent: true, textures: [173, 173, 173], drops: BLOCK.KELP },
 };
 
 // ===== 可放置方块列表（用于背包） =====
@@ -400,6 +406,8 @@ export const PLACEABLE_BLOCKS = [
   BLOCK.COOKED_PORKCHOP, BLOCK.COOKED_BEEF, BLOCK.COOKED_CHICKEN, BLOCK.COOKED_MUTTON,
   // 枪械/弹药
   BLOCK.PISTOL, BLOCK.ROCKET_LAUNCHER, BLOCK.BULLET_ITEM, BLOCK.ROCKET_AMMO,
+  // 水生植物
+  BLOCK.SEAGRASS, BLOCK.KELP,
 ];
 
 // ===== 纹理图集 =====
@@ -1659,6 +1667,38 @@ export function generateTextureAtlas(THREE) {
   }
 
   _atlasCanvas = canvas;
+
+  // Tile 172: 海草（透明背景，绿色叶片）
+  clearTile(ctx, 172, 0);
+  for (let x = 3; x <= 12; x++) {
+    for (let y = 2; y <= 14; y++) {
+      const n = rand(x, y);
+      if (n > 0.35) {
+        let c = n > 0.7 ? '#2a8a3a' : n > 0.5 ? '#1a7a2a' : '#0a6a1a';
+        c = adjustColor(c, (rand(x, y + 5) - 0.5) * 15);
+        const wave = Math.sin(y * 0.5 + x * 0.3) * 1.5;
+        const dx = x - 7.5 + wave;
+        if (Math.abs(dx) < 2.5) {
+          setPixel(ctx, 172, 0, x, y, c);
+        }
+      }
+    }
+  }
+
+  // Tile 173: 海带（透明背景，深绿色长条）
+  clearTile(ctx, 173, 0);
+  for (let y = 1; y <= 14; y++) {
+    for (let x = 5; x <= 10; x++) {
+      const n = rand(x, y);
+      let c = n > 0.6 ? '#3a5a2a' : n > 0.3 ? '#2a4a1a' : '#1a3a0a';
+      c = adjustColor(c, (rand(x, y + 3) - 0.5) * 12);
+      const wave = Math.sin(y * 0.4) * 1.2;
+      const cx = 7.5 + wave;
+      if (Math.abs(x - cx) < 2) {
+        setPixel(ctx, 173, 0, x, y, c);
+      }
+    }
+  }
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.magFilter = THREE.NearestFilter;

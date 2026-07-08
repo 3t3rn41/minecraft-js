@@ -228,6 +228,9 @@ export class World {
             this.maybeVegetation(chunk, lx, height, lz);
           }
         }
+
+        // 水生植物生成（海草、海带）
+        this.maybeWaterPlant(chunk, lx, lz, height, biome);
       }
     }
 
@@ -236,6 +239,47 @@ export class World {
 
     chunk.generated = true;
     chunk.dirty = true;
+  }
+
+  // 水生植物生成
+  maybeWaterPlant(chunk, lx, lz, height, biome) {
+    // 只在水域底部生成（height <= WATER_LEVEL 表示地表在水下）
+    if (height > WATER_LEVEL) return;
+    if (height < 2) return;
+
+    const surfaceIdx = chunk.index(lx, height - 1, lz);
+    const surfaceBlock = chunk.blocks[surfaceIdx];
+
+    // 只在沙子或泥土上生成
+    if (surfaceBlock !== BLOCK.SAND && surfaceBlock !== BLOCK.DIRT && surfaceBlock !== BLOCK.GRASS) return;
+
+    // 确保上方是水
+    const aboveBlock = chunk.blocks[chunk.index(lx, height, lz)];
+    if (aboveBlock !== BLOCK.WATER) return;
+
+    const wx = chunk.cx * CHUNK_SIZE + lx;
+    const wz = chunk.cz * CHUNK_SIZE + lz;
+    const r = this._hashRandom(wx, height, wz, 700);
+
+    // 海草（较常见）
+    if (r < 0.15) {
+      chunk.blocks[chunk.index(lx, height, lz)] = BLOCK.SEAGRASS;
+    }
+
+    // 海带（较少见，会长高几格）
+    if (r > 0.85 && r < 0.92) {
+      const kelpHeight = 2 + Math.floor(this._hashRandom(wx, height + 1, wz, 701) * 4);
+      for (let k = 0; k < kelpHeight; k++) {
+        const ky = height + k;
+        if (ky >= CHUNK_HEIGHT) break;
+        const kIdx = chunk.index(lx, ky, lz);
+        if (chunk.blocks[kIdx] === BLOCK.WATER) {
+          chunk.blocks[kIdx] = BLOCK.KELP;
+        } else {
+          break;
+        }
+      }
+    }
   }
 
   // 获取生物群系

@@ -4,7 +4,7 @@
  */
 
 import * as THREE from 'three';
-import { BLOCK_DEFS, BLOCK, generateBlockIcon } from './blocks.js';
+import { BLOCK_DEFS, BLOCK, generateBlockIcon, WATER_LEVEL } from './blocks.js';
 import { generateTextureAtlas } from './blocks.js';
 
 // 生物基类
@@ -206,8 +206,8 @@ class Pig extends Entity {
   constructor(world, x, y, z) {
     super(world, x, y, z);
     this.type = 'pig';
-    this.health = 10;
-    this.maxHealth = 10;
+    this.health = 40;
+    this.maxHealth = 40;
     this.width = 0.8;
     this.height = 0.8;
     this.wanderTimer = 0;
@@ -890,8 +890,8 @@ class Cow extends Entity {
   constructor(world, x, y, z) {
     super(world, x, y, z);
     this.type = 'cow';
-    this.health = 10;
-    this.maxHealth = 10;
+    this.health = 40;
+    this.maxHealth = 40;
     this.width = 0.8;
     this.height = 1.2;
     this.wanderTimer = 0;
@@ -984,8 +984,8 @@ class Sheep extends Entity {
   constructor(world, x, y, z) {
     super(world, x, y, z);
     this.type = 'sheep';
-    this.health = 8;
-    this.maxHealth = 8;
+    this.health = 32;
+    this.maxHealth = 32;
     this.width = 0.7;
     this.height = 1.0;
     this.wanderTimer = 0;
@@ -1061,8 +1061,8 @@ class Chicken extends Entity {
   constructor(world, x, y, z) {
     super(world, x, y, z);
     this.type = 'chicken';
-    this.health = 4;
-    this.maxHealth = 4;
+    this.health = 16;
+    this.maxHealth = 16;
     this.width = 0.4;
     this.height = 0.6;
     this.wanderTimer = 0;
@@ -1922,6 +1922,147 @@ class EnderDragon extends Entity {
   }
 }
 
+// 鱼 — 水生被动生物
+class Fish extends Entity {
+  constructor(world, x, y, z) {
+    super(world, x, y, z);
+    this.type = 'fish';
+    this.health = 3;
+    this.maxHealth = 3;
+    this.width = 0.3;
+    this.height = 0.3;
+    this.wanderTimer = 0;
+    this.wanderDir = { x: 0, y: 0, z: 0 };
+    this.outOfWaterTimer = 0;
+    this.createMesh();
+  }
+
+  createMesh() {
+    const group = new THREE.Group();
+    const bodyMat = new THREE.MeshLambertMaterial({ color: 0xc0c0e0 });
+    const finMat = new THREE.MeshLambertMaterial({ color: 0x8080a0 });
+
+    // 鱼身（纺样形）
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.2, 0.5), bodyMat);
+    body.position.y = 0.15;
+    group.add(body);
+
+    // 尾巴
+    const tail = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.15, 0.15), finMat);
+    tail.position.set(0, 0.15, -0.3);
+    group.add(tail);
+
+    // 背鳍
+    const dorsal = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.1, 0.15), finMat);
+    dorsal.position.set(0, 0.25, 0);
+    group.add(dorsal);
+
+    // 眼睛
+    const eyeMat = new THREE.MeshLambertMaterial({ color: 0x000000 });
+    const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 0.03), eyeMat);
+    eyeL.position.set(-0.08, 0.2, 0.2);
+    group.add(eyeL);
+    const eyeR = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 0.03), eyeMat);
+    eyeR.position.set(0.08, 0.2, 0.2);
+    group.add(eyeR);
+
+    this.mesh = group;
+  }
+
+  update(dt, player) {
+    if (this.dying) { this.updateDying(dt); return; }
+
+    // 检查是否在水中
+    const blockAt = this.world.getBlock(
+      Math.floor(this.position.x),
+      Math.floor(this.position.y + 0.15),
+      Math.floor(this.position.z)
+    );
+    const inWater = blockAt === BLOCK.WATER;
+
+    if (!inWater) {
+      this.outOfWaterTimer += dt;
+      // 离水太久受伤
+      if (this.outOfWaterTimer > 3) {
+        this.takeDamage(1);
+        this.outOfWaterTimer = 0;
+      }
+      // 扑跳
+      if (this.onGround && Math.random() < 0.1) {
+        this.velocity.y = 4;
+      }
+    } else {
+      this.outOfWaterTimer = 0;
+    }
+
+    // 漫游AI
+    this.wanderTimer -= dt;
+    if (this.wanderTimer <= 0) {
+      this.wanderTimer = 1 + Math.random() * 3;
+      if (inWater) {
+        // 在水中三维方向漫游
+        const angle = Math.random() * Math.PI * 2;
+        const pitch = (Math.random() - 0.5) * 0.5;
+        this.wanderDir.x = Math.cos(angle) * 2;
+        this.wanderDir.z = Math.sin(angle) * 2;
+        this.wanderDir.y = pitch * 2;
+        this.yaw = angle;
+      } else {
+        this.wanderDir.x = 0;
+        this.wanderDir.y = 0;
+        this.wanderDir.z = 0;
+      }
+    }
+
+    if (inWater) {
+      // 水中游泳：不施加重力，自由移动
+      this.velocity.x = this.wanderDir.x;
+      this.velocity.y = this.wanderDir.y;
+      this.velocity.z = this.wanderDir.z;
+      // 水中阻力
+      this.velocity.x *= 0.9;
+      this.velocity.z *= 0.9;
+      this.velocity.y *= 0.9;
+      // 微浮力
+      this.velocity.y += 2 * dt;
+
+      // 直接更新位置（水中不检查碰撞）
+      this.position.x += this.velocity.x * dt;
+      this.position.y += this.velocity.y * dt;
+      this.position.z += this.velocity.z * dt;
+      this.onGround = false;
+    } else {
+      // 地面物理
+      this.velocity.x = this.wanderDir.x;
+      this.velocity.z = this.wanderDir.z;
+      this.updatePhysics(dt);
+    }
+
+    // 避开玩家
+    const distToPlayer = this.distanceTo(player.position.x, player.position.y, player.position.z);
+    if (distToPlayer < 2) {
+      const dx = this.position.x - player.position.x;
+      const dz = this.position.z - player.position.z;
+      const len = Math.sqrt(dx * dx + dz * dz);
+      if (len > 0) {
+        this.velocity.x = (dx / len) * 3;
+        this.velocity.z = (dz / len) * 3;
+      }
+    }
+
+    // 更新网格
+    if (this.mesh) {
+      this.mesh.position.copy(new THREE.Vector3(this.position.x, this.position.y, this.position.z));
+      this.mesh.rotation.y = this.yaw;
+    }
+    this.updateHurtFlash(dt);
+  }
+
+  onDeath() {
+    return [{ id: BLOCK.RAW_BEEF, count: 1 }];
+  }
+}
+
 // 生物管理器
 export class MobManager {
   constructor(game) {
@@ -1976,6 +2117,8 @@ export class MobManager {
       mob.game = this.game;
     } else if (type === 'iron_golem') {
       mob = new IronGolem(this.game.world, x, y, z);
+    } else if (type === 'fish') {
+      mob = new Fish(this.game.world, x, y, z);
     } else if (type === 'wither') {
       mob = new WitherBoss(this.game.world, x, y, z);
       mob.game = this.game;
@@ -2072,6 +2215,28 @@ export class MobManager {
     const dist = 20 + Math.random() * 15;
     const x = Math.floor(player.position.x + Math.cos(angle) * dist);
     const z = Math.floor(player.position.z + Math.sin(angle) * dist);
+
+    // 尝试在水中生成鱼
+    for (let y = WATER_LEVEL; y > 0; y--) {
+      const block = this.game.world.getBlock(x, y, z);
+      if (block === BLOCK.WATER) {
+        // 检查是否是较深水域（至少3格深）
+        let depth = 0;
+        for (let dy = y; dy > 0; dy--) {
+          if (this.game.world.getBlock(x, dy, z) === BLOCK.WATER) depth++;
+          else break;
+        }
+        if (depth >= 3 && Math.random() < 0.4) {
+          this.spawnMob(x + 0.5, y + 0.5, z + 0.5, 'fish');
+          if (this.game.multiplayer && this.game.multiplayer.isHost) {
+            this.game.multiplayer.sendMobSpawn(x + 0.5, y + 0.5, z + 0.5, 'fish');
+          }
+          return;
+        }
+        break;
+      }
+      if (BLOCK_DEFS[block]?.solid) break;
+    }
 
     // 找到地面高度
     for (let y = 60; y > 0; y--) {
