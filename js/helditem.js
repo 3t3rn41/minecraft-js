@@ -794,6 +794,192 @@ function createBarrettAmmoModel() {
   return g;
 }
 
+// ===== 龙息炮模型（火焰喷射器）=====
+function createDragonBreathModel() {
+  const g = new THREE.Group();
+  const darkMat = mat(0x8b0000);
+  const redMat = mat(0xcc2200);
+  const steelMat = mat(0x444444);
+  const fireMat = mat(0xff6600, { emissive: 0xff3300, emissiveIntensity: 0.4 });
+
+  // 喷射管（粗短管）
+  const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.04, 0.2, 10), steelMat);
+  nozzle.rotation.x = Math.PI / 2;
+  nozzle.position.z = 0.1;
+  g.add(nozzle);
+
+  // 管口火焰指示器（发光小锥）
+  const flameTip = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.05, 6), fireMat);
+  flameTip.rotation.x = -Math.PI / 2;
+  flameTip.position.z = 0.22;
+  g.add(flameTip);
+
+  // 燃料罐主体（圆筒）
+  const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.22, 12), darkMat);
+  tank.rotation.x = Math.PI / 2;
+  tank.position.set(0, 0, -0.05);
+  g.add(tank);
+
+  // 燃料罐装饰环
+  const ring1 = new THREE.Mesh(new THREE.TorusGeometry(0.055, 0.008, 4, 10), redMat);
+  ring1.position.z = 0.02;
+  ring1.rotation.x = Math.PI / 2;
+  g.add(ring1);
+  const ring2 = new THREE.Mesh(new THREE.TorusGeometry(0.055, 0.008, 4, 10), redMat);
+  ring2.position.z = -0.12;
+  ring2.rotation.x = Math.PI / 2;
+  g.add(ring2);
+
+  // 前握把
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.08, 0.04), mat(0x3a1a00));
+  grip.position.set(0, -0.07, 0.06);
+  grip.rotation.x = -0.15;
+  g.add(grip);
+
+  // 后握把
+  const rearGrip = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.09, 0.04), mat(0x3a1a00));
+  rearGrip.position.set(0, -0.08, -0.12);
+  rearGrip.rotation.x = -0.25;
+  g.add(rearGrip);
+
+  // 顶部燃料指示灯（发光）
+  const indicator = new THREE.Mesh(new THREE.SphereGeometry(0.012, 6, 4), fireMat);
+  indicator.position.set(0, 0.06, -0.05);
+  g.add(indicator);
+
+  return g;
+}
+
+// ===== 雷霆链枪模型（科幻电击枪）=====
+function createThunderGunModel() {
+  const g = new THREE.Group();
+  const blueMat = mat(0x1a6aaa);
+  const darkBlueMat = mat(0x0a3a6a);
+  const glowMat = mat(0x66ddff, { emissive: 0x3399ff, emissiveIntensity: 0.5 });
+  const steelMat = mat(0x555555);
+
+  // 枪管（方形蓝色金属管）
+  const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.22), blueMat);
+  barrel.position.z = 0.08;
+  g.add(barrel);
+
+  // 管口电极（发光）
+  const electrode = new THREE.Mesh(new THREE.ConeGeometry(0.022, 0.04, 6), glowMat);
+  electrode.rotation.x = -Math.PI / 2;
+  electrode.position.z = 0.21;
+  g.add(electrode);
+
+  // 能量核心主体
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.07, 0.14), darkBlueMat);
+  body.position.set(0, -0.01, -0.06);
+  g.add(body);
+
+  // 能量核心发光体（中心球）
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.025, 8, 6), glowMat);
+  core.position.set(0, 0.01, -0.06);
+  g.add(core);
+
+  // 能量管（两侧细管）
+  for (const sx of [-0.035, 0.035]) {
+    const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.16, 6), steelMat);
+    pipe.rotation.x = Math.PI / 2;
+    pipe.position.set(sx, 0.02, -0.04);
+    g.add(pipe);
+  }
+
+  // 顶部电极尖
+  const topElectrode = new THREE.Mesh(new THREE.ConeGeometry(0.015, 0.03, 6), glowMat);
+  topElectrode.position.set(0, 0.05, -0.02);
+  g.add(topElectrode);
+
+  // 握把
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.09, 0.04), darkBlueMat);
+  grip.position.set(0, -0.08, -0.08);
+  grip.rotation.x = -0.2;
+  g.add(grip);
+
+  // 扳机护圈
+  const trigger = new THREE.Mesh(new THREE.TorusGeometry(0.015, 0.006, 4, 8, Math.PI), darkBlueMat);
+  trigger.position.set(0, -0.04, -0.04);
+  trigger.rotation.x = Math.PI / 2;
+  g.add(trigger);
+
+  // 枪管散热条
+  for (let i = 0; i < 3; i++) {
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.005, 0.008), steelMat);
+    fin.position.set(0, 0.025, 0.04 + i * 0.04);
+    g.add(fin);
+  }
+
+  return g;
+}
+
+// ===== 湮灭炮模型（紫色科幻炮）=====
+function createAnnihilatorModel() {
+  const g = new THREE.Group();
+  const purpleMat = mat(0x5a1a7a);
+  const darkPurpleMat = mat(0x2a0a3a);
+  const glowMat = mat(0xcc44ff, { emissive: 0x8822cc, emissiveIntensity: 0.5 });
+  const steelMat = mat(0x444444);
+
+  // 枪管（宽粗管）
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.04, 0.18, 10), purpleMat);
+  barrel.rotation.x = Math.PI / 2;
+  barrel.position.z = 0.08;
+  g.add(barrel);
+
+  // 管口能量环（发光）
+  const muzzleRing = new THREE.Mesh(new THREE.TorusGeometry(0.042, 0.008, 6, 12), glowMat);
+  muzzleRing.position.z = 0.17;
+  muzzleRing.rotation.x = Math.PI / 2;
+  g.add(muzzleRing);
+
+  // 能量核心主体
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.08, 0.14), darkPurpleMat);
+  body.position.set(0, -0.01, -0.06);
+  g.add(body);
+
+  // 中心能量球（发光）
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.03, 10, 8), glowMat);
+  core.position.set(0, 0.01, -0.04);
+  g.add(core);
+
+  // 旋转能量环（3个环装饰）
+  for (let i = 0; i < 3; i++) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.04, 0.005, 4, 12), glowMat);
+    ring.position.set(0, 0.01, -0.04);
+    ring.rotation.x = (i / 3) * Math.PI;
+    ring.rotation.y = (i / 3) * Math.PI * 0.5;
+    g.add(ring);
+  }
+
+  // 侧面能量条
+  for (const sx of [-0.04, 0.04]) {
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.005, 0.04, 0.1), glowMat);
+    stripe.position.set(sx, 0, -0.04);
+    g.add(stripe);
+  }
+
+  // 握把
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.1, 0.045), darkPurpleMat);
+  grip.position.set(0, -0.09, -0.08);
+  grip.rotation.x = -0.2;
+  g.add(grip);
+
+  // 扳机护圈
+  const trigger = new THREE.Mesh(new THREE.TorusGeometry(0.016, 0.006, 4, 8, Math.PI), darkPurpleMat);
+  trigger.position.set(0, -0.05, -0.04);
+  trigger.rotation.x = Math.PI / 2;
+  g.add(trigger);
+
+  // 顶部能量条
+  const topBar = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.008, 0.06), glowMat);
+  topBar.position.set(0, 0.05, -0.02);
+  g.add(topBar);
+
+  return g;
+}
+
 // ===== 默认平面图标（无3D模型的物品）=====
 function createFlatIcon(blockId, atlasTexture) {
   const g = new THREE.Group();
@@ -885,6 +1071,9 @@ export function createItemModel(itemId, toolData, atlasTexture) {
     case BLOCK.BARRETT:       return createBarrettModel();
     case BLOCK.GATLING_AMMO:  return createGatlingAmmoModel();
     case BLOCK.BARRETT_AMMO:  return createBarrettAmmoModel();
+    case BLOCK.DRAGON_BREATH: return createDragonBreathModel();
+    case BLOCK.THUNDER_GUN:   return createThunderGunModel();
+    case BLOCK.ANNIHILATOR:   return createAnnihilatorModel();
     default: {
       // 普通方块
       const def = BLOCK_DEFS[itemId];
@@ -1001,6 +1190,12 @@ export class HeldItemViewModel {
       type = 'gatling';
     } else if (itemId === BLOCK.BARRETT) {
       type = 'barrett';
+    } else if (itemId === BLOCK.DRAGON_BREATH) {
+      type = 'dragon_breath';
+    } else if (itemId === BLOCK.THUNDER_GUN) {
+      type = 'thunder_gun';
+    } else if (itemId === BLOCK.ANNIHILATOR) {
+      type = 'annihilator';
     } else if (itemId === BLOCK.BULLET_ITEM || itemId === BLOCK.ROCKET_AMMO ||
                itemId === BLOCK.GATLING_AMMO || itemId === BLOCK.BARRETT_AMMO) {
       type = 'throwable';
@@ -1102,6 +1297,21 @@ export class HeldItemViewModel {
         // 巴雷特：狙击姿势，枪身水平
         model.position.set(0.26, -0.14, -0.58);
         model.rotation.set(-1.45, -0.05, 0);
+        break;
+      case 'dragon_breath':
+        // 龙息炮：低位平举，略向下倾斜
+        model.position.set(0.28, -0.16, -0.52);
+        model.rotation.set(-1.35, -0.08, 0.02);
+        break;
+      case 'thunder_gun':
+        // 雷霆链枪：平举瞄准
+        model.position.set(0.26, -0.13, -0.52);
+        model.rotation.set(-1.42, -0.05, 0);
+        break;
+      case 'annihilator':
+        // 湮灭炮：双手持枪，略向下
+        model.position.set(0.27, -0.15, -0.54);
+        model.rotation.set(-1.38, -0.06, 0.01);
         break;
       default:
         // 方块：略倾斜展示

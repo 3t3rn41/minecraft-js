@@ -28,6 +28,8 @@ export const PROJECTILE_TYPE = {
   ROCKET: 'rocket',
   GATLING_BULLET: 'gatling_bullet',
   SNIPER_BULLET: 'sniper_bullet',
+  QUANTUM_ORB: 'quantum_orb',
+  DRAGON_FIRE: 'dragon_fire',
 };
 
 // 弹道轨迹颜色
@@ -46,6 +48,8 @@ const TRAIL_COLORS = {
   rocket: 0xff4400,
   gatling_bullet: 0xffaa00,
   sniper_bullet: 0x66ffaa,
+  quantum_orb: 0xcc44ff,
+  dragon_fire: 0xff4400,
 };
 
 // ===== 辅助材质函数 =====
@@ -381,6 +385,79 @@ function buildSniperBulletModel() {
   return g;
 }
 
+/** 湮灭炮量子球模型（紫色能量球 + 旋转环） */
+function buildQuantumOrbModel() {
+  const g = new THREE.Group();
+
+  // 核心能量球
+  const core = new THREE.Mesh(
+    new THREE.SphereGeometry(0.12, 10, 8),
+    mat(0xcc44ff, { transparent: true, opacity: 0.85 })
+  );
+  g.add(core);
+
+  // 外层光晕
+  const aura = new THREE.Mesh(
+    new THREE.SphereGeometry(0.18, 10, 8),
+    mat(0xff66ff, { transparent: true, opacity: 0.25 })
+  );
+  g.add(aura);
+
+  // 旋转能量环（3个不同角度的环）
+  for (let i = 0; i < 3; i++) {
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(0.15, 0.01, 4, 12),
+      mat(0xdd88ff)
+    );
+    ring.rotation.x = (i / 3) * Math.PI;
+    ring.rotation.y = (i / 3) * Math.PI * 0.5;
+    g.add(ring);
+  }
+
+  return g;
+}
+
+/** 龙息炮火焰球模型（火球 + 拖尾翼 + 能量光晕） */
+function buildDragonFireModel() {
+  const g = new THREE.Group();
+
+  // 核心火球
+  const core = new THREE.Mesh(
+    new THREE.SphereGeometry(0.14, 10, 8),
+    mat(0xff4400, { transparent: true, opacity: 0.9 })
+  );
+  g.add(core);
+
+  // 内层亮焰
+  const inner = new THREE.Mesh(
+    new THREE.SphereGeometry(0.1, 8, 6),
+    mat(0xffaa00, { transparent: true, opacity: 0.7 })
+  );
+  g.add(inner);
+
+  // 外层光晕
+  const aura = new THREE.Mesh(
+    new THREE.SphereGeometry(0.2, 8, 6),
+    mat(0xff6600, { transparent: true, opacity: 0.25 })
+  );
+  g.add(aura);
+
+  // 拖尾翼片（3片，向后延伸）
+  for (let i = 0; i < 3; i++) {
+    const fin = new THREE.Mesh(
+      new THREE.ConeGeometry(0.04, 0.18, 4),
+      mat(0xff8800, { transparent: true, opacity: 0.6 })
+    );
+    fin.position.z = -0.15;
+    fin.rotation.x = -Math.PI / 2;
+    fin.rotation.y = (i / 3) * Math.PI * 2;
+    fin.rotation.z = Math.PI / 2;
+    g.add(fin);
+  }
+
+  return g;
+}
+
 /** 子弹模型 */
 function buildBulletModel() {
   const g = new THREE.Group();
@@ -572,6 +649,10 @@ export class Projectile {
         return buildGatlingBulletModel();
       case PROJECTILE_TYPE.SNIPER_BULLET:
         return buildSniperBulletModel();
+      case PROJECTILE_TYPE.QUANTUM_ORB:
+        return buildQuantumOrbModel();
+      case PROJECTILE_TYPE.DRAGON_FIRE:
+        return buildDragonFireModel();
       default:
         return new THREE.Group();
     }
@@ -782,6 +863,19 @@ export class Projectile {
       case PROJECTILE_TYPE.SNIPER_BULLET:
         this.game.effects.createBlockBreakParticles(px, py, pz, 0x66ffaa);
         break;
+      case PROJECTILE_TYPE.QUANTUM_ORB:
+        if (this.game.effects) {
+          this.game.effects.createQuantumTrail(this.position.x, this.position.y, this.position.z);
+        }
+        break;
+      case PROJECTILE_TYPE.DRAGON_FIRE:
+        // 火焰投射物拖尾粒子
+        this.game.effects.createBlockBreakParticles(px, py, pz, 0xff4400);
+        this.game.effects.createBlockBreakParticles(px, py, pz, 0xffaa00);
+        if (Math.random() < 0.3) {
+          this.game.effects.createBlockBreakParticles(px, py, pz, 0xff8800);
+        }
+        break;
       case PROJECTILE_TYPE.ROCKET:
         this.game.effects.createBlockBreakParticles(px, py, pz, 0xff6600);
         this.game.effects.createBlockBreakParticles(px, py, pz, 0xffaa00);
@@ -797,8 +891,6 @@ export class Projectile {
   }
 
   onBlockHit(x, y, z) {
-    console.log('[Projectile] onBlockHit:', this.type, 'at', x, y, z, 'effects:', !!this.game.effects);
-
     if (this.onHitBlock) {
       this.onHitBlock(x, y, z, this);
       return;
@@ -815,9 +907,7 @@ export class Projectile {
         if (this.game.effects) {
           try {
             this.game.effects.createBlockBreakParticles(x, y, z, this._getTrailColor());
-          } catch (e) {
-            console.error('[Projectile] createBlockBreakParticles error:', e);
-          }
+          } catch (e) { /* 忽略 */ }
         }
         break;
 
@@ -827,9 +917,7 @@ export class Projectile {
             for (let i = 0; i < 3; i++) {
               this.game.effects.createBlockBreakParticles(x, y, z, 0xffdd44);
             }
-          } catch (e) {
-            console.error('[Projectile] BULLET particles error:', e);
-          }
+          } catch (e) { /* 忽略 */ }
         }
         this.dead = true;
         break;
@@ -861,17 +949,23 @@ export class Projectile {
         this.dead = true;
         break;
 
+      case PROJECTILE_TYPE.QUANTUM_ORB:
+        // 量子球击中：创建引力漩涡
+        if (this.game.effects) {
+          try {
+            this.game.effects.createQuantumVortex(x + 0.5, y + 0.5, z + 0.5, 3, 5);
+          } catch (e) { /* 忽略 */ }
+        }
+        // 漩涡吸引并伤害附近实体
+        this._quantumVortexPull(x + 0.5, y + 0.5, z + 0.5);
+        this.dead = true;
+        break;
+
       case PROJECTILE_TYPE.ROCKET:
-        console.log('[Projectile] ROCKET hit, calling createExplosion at', this.position.x, this.position.y, this.position.z);
         if (this.game.effects) {
           try {
             this.game.effects.createExplosion(this.position.x, this.position.y, this.position.z, 4);
-            console.log('[Projectile] createExplosion completed successfully');
-          } catch (e) {
-            console.error('[Projectile] createExplosion error:', e);
-          }
-        } else {
-          console.warn('[Projectile] this.game.effects is falsy! game:', !!this.game);
+          } catch (e) { /* 忽略 */ }
         }
         this.dead = true;
         break;
@@ -881,9 +975,7 @@ export class Projectile {
         if (this.game.effects) {
           try {
             this.game.effects.createBlockBreakParticles(x, y, z, 0xffffff);
-          } catch (e) {
-            console.error('[Projectile] SNOWBALL/EGG particles error:', e);
-          }
+          } catch (e) { /* 忽略 */ }
         }
         if (this.type === PROJECTILE_TYPE.EGG && Math.random() < 0.125) {
           if (this.game.mobs) {
@@ -906,9 +998,7 @@ export class Projectile {
               this.game.effects.createBlockBreakParticles(
                 Math.floor(this.owner.position.x), Math.floor(this.owner.position.y), Math.floor(this.owner.position.z), 0x00aa44
               );
-            } catch (e) {
-              console.error('[Projectile] ENDER_PEARL particles error:', e);
-            }
+            } catch (e) { /* 忽略 */ }
           }
         }
         this.dead = true;
@@ -918,9 +1008,7 @@ export class Projectile {
         if (this.game.effects) {
           try {
             this.game.effects.createExplosion(this.position.x, this.position.y, this.position.z, 2);
-          } catch (e) {
-            console.error('[Projectile] FIREBALL explosion error:', e);
-          }
+          } catch (e) { /* 忽略 */ }
         }
         this.dead = true;
         break;
@@ -929,9 +1017,7 @@ export class Projectile {
         if (this.game.effects) {
           try {
             this.game.effects.createExplosion(this.position.x, this.position.y, this.position.z, 1);
-          } catch (e) {
-            console.error('[Projectile] WITHER_SKULL explosion error:', e);
-          }
+          } catch (e) { /* 忽略 */ }
         }
         this.dead = true;
         break;
@@ -942,15 +1028,18 @@ export class Projectile {
             this.game.effects.createBlockBreakParticles(x, y, z, 0xff6688);
             this.game.effects.createBlockBreakParticles(x, y, z, 0xffcc00);
             this.game.effects.createBlockBreakParticles(x, y, z, 0x44ff44);
-          } catch (e) {
-            console.error('[Projectile] FIREWORK particles error:', e);
-          }
+          } catch (e) { /* 忽略 */ }
         }
         this.dead = true;
         break;
 
+      case PROJECTILE_TYPE.DRAGON_FIRE:
+        // 火焰投射物命中方块：火焰爆炸
+        this._dragonFireExplode(x + 0.5, y + 0.5, z + 0.5);
+        this.dead = true;
+        break;
+
       default:
-        console.warn('[Projectile] Unknown type in onBlockHit:', this.type);
         this.dead = true;
     }
   }
@@ -1052,6 +1141,12 @@ export class Projectile {
       }
     }
 
+    // 龙息炮命中实体：火焰爆炸 + 灼烧
+    if (this.type === PROJECTILE_TYPE.DRAGON_FIRE) {
+      this._dragonFireExplode(this.position.x, this.position.y, this.position.z);
+      mob._burnTimer = 4; // 灼烧 4 秒
+    }
+
     const dx = mob.position.x - this.position.x;
     const dz = mob.position.z - this.position.z;
     const len = Math.sqrt(dx * dx + dz * dz);
@@ -1061,6 +1156,7 @@ export class Projectile {
       else if (this.type === PROJECTILE_TYPE.BULLET) knockback = 1;
       else if (this.type === PROJECTILE_TYPE.GATLING_BULLET) knockback = 1.5;
       else if (this.type === PROJECTILE_TYPE.SNIPER_BULLET) knockback = 5;
+      else if (this.type === PROJECTILE_TYPE.DRAGON_FIRE) knockback = 3;
       mob.velocity.x += (dx / len) * knockback;
       mob.velocity.z += (dz / len) * knockback;
       mob.velocity.y = 3;
@@ -1197,6 +1293,301 @@ export class Projectile {
     }
   }
 
+  // 判断方块是否可燃
+  _isFlammable(blockId) {
+    if (blockId === 0 || blockId === BLOCK.BEDROCK) return false;
+    const def = BLOCK_DEFS[blockId];
+    if (!def || !def.name) return false;
+    const name = def.name;
+    // 可燃方块：原木、木板、树叶、草、花、干草、书架、工作台、蘑菇等
+    return name.includes('木') || name.includes('叶') || name.includes('草') ||
+           name.includes('花') || name.includes('干草') || name.includes('书') ||
+           name.includes('工作台') || name.includes('蘑菇') || name.includes('海草') ||
+           name.includes('海带') || name.includes('藤蔓') || name.includes('苔藓');
+  }
+
+  // 龙息炮火焰爆炸：范围伤害 + 灼烧 + 粒子 + 地面残留火 + 点燃可燃方块（可蔓延）
+  _dragonFireExplode(cx, cy, cz) {
+    const explodeRadius = 3;
+    const damage = 8;
+    const burnDuration = 4;
+
+    // 火焰爆炸粒子
+    if (this.game.effects) {
+      try {
+        // 大量火焰粒子
+        for (let i = 0; i < 12; i++) {
+          this.game.effects.createBlockBreakParticles(
+            Math.floor(cx), Math.floor(cy), Math.floor(cz), 0xff4400
+          );
+          this.game.effects.createBlockBreakParticles(
+            Math.floor(cx), Math.floor(cy), Math.floor(cz), 0xffaa00
+          );
+        }
+        // 闪光
+        if (this.game.effects.createFlash) {
+          this.game.effects.createFlash(cx, cy, cz, 3);
+        }
+        // 地面残留火
+        if (this.game.effects.createGroundFire) {
+          this.game.effects.createGroundFire(cx, cy - 0.5, cz, burnDuration);
+        }
+      } catch (e) { /* 忽略 */ }
+    }
+
+    // 范围伤害 + 灼烧 + 击退
+    if (this.game.mobs && this.game.mobs.mobs) {
+      for (const mob of this.game.mobs.mobs) {
+        const dx = mob.position.x - cx;
+        const dy = (mob.position.y + 0.5) - cy;
+        const dz = mob.position.z - cz;
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (dist < explodeRadius && dist > 0.1) {
+          // 距离越近伤害越高
+          const dmg = Math.floor(damage * (1 - dist / explodeRadius * 0.4));
+          mob.takeDamage(dmg);
+          // 灼烧效果
+          mob._burnTimer = burnDuration;
+          // 击退
+          const force = (1 - dist / explodeRadius) * 3;
+          mob.velocity.x += (dx / dist) * force;
+          mob.velocity.y += 0.5;
+          mob.velocity.z += (dz / dist) * force;
+          // 伤害数字
+          if (this.game.effects && this.game.effects.showDamageNumber) {
+            this.game.effects.showDamageNumber(mob.position.x, mob.position.y + 1, mob.position.z, dmg, '#ff6600');
+          }
+        }
+      }
+    }
+
+    // 点燃爆炸范围内的可燃方块（启动火焰蔓延系统）
+    if (this.game.world && this.game.destroyBlock) {
+      const bx = Math.floor(cx);
+      const by = Math.floor(cy);
+      const bz = Math.floor(cz);
+      // 点燃半径2格内的可燃方块
+      const igniteRadius = 2;
+      const toIgnite = [];
+      for (let dx = -igniteRadius; dx <= igniteRadius; dx++) {
+        for (let dy = -igniteRadius; dy <= igniteRadius; dy++) {
+          for (let dz = -igniteRadius; dz <= igniteRadius; dz++) {
+            const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            if (d > igniteRadius) continue;
+            const nx = bx + dx, ny = by + dy, nz = bz + dz;
+            const nid = this.game.world.getBlock(nx, ny, nz);
+            if (this._isFlammable(nid)) {
+              toIgnite.push({ x: nx, y: ny, z: nz });
+            }
+          }
+        }
+      }
+      // 启动火焰蔓延
+      if (toIgnite.length > 0) {
+        this._startFireSpread(toIgnite);
+      }
+    }
+  }
+
+  // 火焰蔓延系统：定时燃烧可燃方块并扩散到相邻方块
+  _startFireSpread(initialBlocks) {
+    const game = this.game;
+    if (!game.world || !game.destroyBlock) return;
+
+    // 已燃烧的方块坐标集合（防止重复燃烧）
+    const burned = new Set();
+    // 待燃烧队列：{x, y, z, delay} — delay 为燃烧延迟（秒）
+    const queue = [];
+    for (const b of initialBlocks) {
+      const key = `${b.x},${b.y},${b.z}`;
+      if (!burned.has(key)) {
+        burned.add(key);
+        queue.push({ x: b.x, y: b.y, z: b.z, delay: 0.3 + Math.random() * 0.5 });
+      }
+    }
+
+    // 最大蔓延数量限制（防止烧毁整个世界）
+    const maxSpread = 80;
+    let spreadCount = 0;
+    let elapsed = 0;
+
+    const tick = setInterval(() => {
+      elapsed += 0.4;
+      // 安全检查：游戏已退出或世界已卸载
+      if (!game.world || !game.destroyBlock) {
+        clearInterval(tick);
+        return;
+      }
+
+      // 处理本 tick 应该燃烧的方块
+      const toBurn = [];
+      for (let i = queue.length - 1; i >= 0; i--) {
+        if (queue[i].delay <= elapsed) {
+          toBurn.push(queue[i]);
+          queue.splice(i, 1);
+        }
+      }
+
+      for (const b of toBurn) {
+        const blockId = game.world.getBlock(b.x, b.y, b.z);
+        // 方块可能已被其他方式破坏
+        if (blockId === 0) continue;
+
+        // 火焰粒子
+        if (game.effects) {
+          try {
+            game.effects.createBlockBreakParticles(b.x, b.y, b.z, 0xff4400);
+            game.effects.createBlockBreakParticles(b.x, b.y, b.z, 0xffaa00);
+            if (Math.random() < 0.3) {
+              game.effects.createBlockBreakParticles(b.x, b.y, b.z, 0xff8800);
+            }
+          } catch (e) { /* 忽略 */ }
+        }
+
+        // 破坏方块
+        game.destroyBlock(b.x, b.y, b.z, false);
+        spreadCount++;
+
+        // 蔓延到相邻可燃方块
+        if (spreadCount < maxSpread) {
+          const neighbors = [
+            [1, 0, 0], [-1, 0, 0],
+            [0, 1, 0], [0, -1, 0],
+            [0, 0, 1], [0, 0, -1],
+          ];
+          for (const [dx, dy, dz] of neighbors) {
+            const nx = b.x + dx, ny = b.y + dy, nz = b.z + dz;
+            const key = `${nx},${ny},${nz}`;
+            if (burned.has(key)) continue;
+            const nid = game.world.getBlock(nx, ny, nz);
+            if (this._isFlammable(nid)) {
+              burned.add(key);
+              // 蔓延延迟：树叶/草/花快速蔓延，木头慢速蔓延
+              const ndef = BLOCK_DEFS[nid];
+              let spreadDelay = 1.0 + Math.random() * 1.5;
+              if (ndef && ndef.name) {
+                if (ndef.name.includes('叶') || ndef.name.includes('草') || ndef.name.includes('花')) {
+                  spreadDelay = 0.4 + Math.random() * 0.6; // 快速蔓延
+                }
+              }
+              queue.push({ x: nx, y: ny, z: nz, delay: elapsed + spreadDelay });
+            }
+          }
+        }
+      }
+
+      // 队列空或达到上限时停止
+      if (queue.length === 0 || spreadCount >= maxSpread || elapsed > 15) {
+        clearInterval(tick);
+      }
+    }, 400);
+  }
+
+  // 湮灭炮引力漩涡吸引实体 + 延迟爆炸
+  _quantumVortexPull(cx, cy, cz) {
+    if (!this.game.mobs || !this.game.mobs.mobs) return;
+    if (!this.game.effects) return;
+
+    const pullRadius = 6;
+    const damage = 12;
+    const game = this.game;
+
+    // 立即吸引并伤害附近实体
+    for (const mob of game.mobs.mobs) {
+      const dx = cx - mob.position.x;
+      const dy = cy - mob.position.y;
+      const dz = cz - mob.position.z;
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (dist < pullRadius && dist > 0.1) {
+        // 吸引力
+        const force = (1 - dist / pullRadius) * 6;
+        mob.velocity.x += (dx / dist) * force;
+        mob.velocity.y += (dy / dist) * force * 0.5;
+        mob.velocity.z += (dz / dist) * force;
+        // 伤害
+        mob.takeDamage(damage);
+        if (game.effects.showDamageNumber) {
+          game.effects.showDamageNumber(mob.position.x, mob.position.y + 1, mob.position.z, damage);
+        }
+      }
+    }
+
+    // 漩涡持续期间每0.5秒吸引一次，3秒后内爆
+    let elapsed = 0;
+    const interval = setInterval(() => {
+      elapsed += 0.5;
+      // 持续吸引
+      if (game.mobs && game.mobs.mobs) {
+        for (const mob of game.mobs.mobs) {
+          const dx = cx - mob.position.x;
+          const dy = cy - mob.position.y;
+          const dz = cz - mob.position.z;
+          const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          if (dist < pullRadius && dist > 0.1) {
+            const force = (1 - dist / pullRadius) * 3;
+            mob.velocity.x += (dx / dist) * force;
+            mob.velocity.y += (dy / dist) * force * 0.3;
+            mob.velocity.z += (dz / dist) * force;
+            if (elapsed < 3) {
+              mob.takeDamage(3);
+            }
+          }
+        }
+      }
+      // 漩涡嗡嗡声
+      if (game.sound && game.sound.vortexHum) {
+        game.sound.vortexHum();
+      }
+      // 内爆
+      if (elapsed >= 3) {
+        clearInterval(interval);
+        if (game.effects) {
+          game.effects.createImplosion(cx, cy, cz, 4);
+        }
+        if (game.sound && game.sound.implosion) {
+          game.sound.implosion();
+        }
+        // 内爆时范围伤害 + 破坏方块
+        if (game.mobs && game.mobs.mobs) {
+          for (const mob of game.mobs.mobs) {
+            const dx = mob.position.x - cx;
+            const dy = mob.position.y - cy;
+            const dz = mob.position.z - cz;
+            const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            if (dist < 5) {
+              const dmg = Math.floor((1 - dist / 5) * 20);
+              if (dmg > 0) {
+                mob.takeDamage(dmg);
+                if (game.effects.showDamageNumber) {
+                  game.effects.showDamageNumber(mob.position.x, mob.position.y + 1, mob.position.z, dmg);
+                }
+              }
+            }
+          }
+        }
+        // 破坏附近方块
+        if (game.world && game.destroyBlock) {
+          for (let dx = -2; dx <= 2; dx++) {
+            for (let dy = -2; dy <= 2; dy++) {
+              for (let dz = -2; dz <= 2; dz++) {
+                const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                if (d > 2.5) continue;
+                const bx = Math.floor(cx + dx);
+                const by = Math.floor(cy + dy);
+                const bz = Math.floor(cz + dz);
+                const blockId = game.world.getBlock(bx, by, bz);
+                if (blockId === 0 || blockId === BLOCK.BEDROCK) continue;
+                const def = BLOCK_DEFS[blockId];
+                if (def && def.name && def.name.includes('黑曜石')) continue;
+                game.destroyBlock(bx, by, bz, false);
+              }
+            }
+          }
+        }
+      }
+    }, 500);
+  }
+
   destroy() {
     if (this.mesh && this.game.scene) {
       this.game.scene.remove(this.mesh);
@@ -1261,7 +1652,6 @@ export class RangedSystem {
 
   // 射击子弹（手枪）— 无限子弹
   shootBullet() {
-    console.log('[RangedSystem] shootBullet called');
     const eye = this.game.player.getEyePosition();
     const dir = this.game.player.getLookDirection();
 
@@ -1296,7 +1686,6 @@ export class RangedSystem {
 
   // 射击火箭弹（火箭筒）— 无限火箭弹
   shootRocket() {
-    console.log('[RangedSystem] shootRocket called');
     const eye = this.game.player.getEyePosition();
     const dir = this.game.player.getLookDirection();
 
@@ -1318,7 +1707,6 @@ export class RangedSystem {
     });
 
     this.projectiles.push(rocket);
-    console.log('[RangedSystem] Rocket projectile created, total projectiles:', this.projectiles.length);
 
     if (this.game.sound) this.game.sound.explosion();
 
@@ -1466,6 +1854,269 @@ export class RangedSystem {
       flashGeom.dispose();
       flashMat.dispose();
     }, 80);
+  }
+
+  // 射击湮灭炮量子球 — 慢速、重力影响、命中后引力漩涡
+  shootAnnihilator() {
+    const eye = this.game.player.getEyePosition();
+    const dir = this.game.player.getLookDirection();
+
+    const speed = 35;
+    const damage = 12;
+    const maxLifetime = 20;
+
+    const spawnX = eye.x + dir.x * 1.0;
+    const spawnY = eye.y + dir.y * 1.0;
+    const spawnZ = eye.z + dir.z * 1.0;
+
+    const orb = new Projectile(this.game, PROJECTILE_TYPE.QUANTUM_ORB, spawnX, spawnY, spawnZ, dir, {
+      speed, damage,
+      owner: this.game.player,
+      maxLifetime,
+      gravity: 0.2,
+      piercing: 0,
+      spinSpeed: 10,
+    });
+
+    this.projectiles.push(orb);
+
+    // 枪口紫色能量闪光
+    this.createMuzzleFlash(eye, dir, 0xcc44ff, 0.12, 3, true);
+
+    // 屏幕震动
+    if (this.game.effects) {
+      this.game.effects.screenShake = Math.max(this.game.effects.screenShake || 0, 1.0);
+    }
+
+    if (this.game.sound) this.game.sound.annihilator();
+
+    if (this.game.multiplayer) {
+      this.game.multiplayer.sendProjectile(PROJECTILE_TYPE.QUANTUM_ORB, eye, dir, { speed, damage, maxLifetime, gravity: 0.2, piercing: 0 });
+    }
+
+    return orb;
+  }
+
+  // 龙息炮：发射火焰投射物 — 远程射击，命中后产生火焰爆炸
+  shootDragonBreath() {
+    const eye = this.game.player.getEyePosition();
+    const dir = this.game.player.getLookDirection();
+
+    const speed = 55;
+    const damage = 6;
+    const maxLifetime = 8;
+
+    const spawnX = eye.x + dir.x * 1.0;
+    const spawnY = eye.y + dir.y * 1.0;
+    const spawnZ = eye.z + dir.z * 1.0;
+
+    const fire = new Projectile(this.game, PROJECTILE_TYPE.DRAGON_FIRE, spawnX, spawnY, spawnZ, dir, {
+      speed, damage,
+      owner: this.game.player,
+      maxLifetime,
+      gravity: 0,
+      piercing: 1,
+    });
+
+    this.projectiles.push(fire);
+
+    // 枪口火焰闪光
+    this.createMuzzleFlash(eye, dir, 0xff6600, 0.08, 3, true);
+
+    if (this.game.sound) this.game.sound.dragonBreath();
+
+    if (this.game.multiplayer) {
+      this.game.multiplayer.sendProjectile(PROJECTILE_TYPE.DRAGON_FIRE, eye, dir, { speed, damage, maxLifetime, gravity: 0, piercing: 1 });
+    }
+
+    return fire;
+  }
+
+  // 雷霆链枪：即时闪电链攻击 — 射线检测 + 链式跳跃
+  shootThunderGun() {
+    const eye = this.game.player.getEyePosition();
+    const dir = this.game.player.getLookDirection();
+
+    const maxRange = 50;
+    const chainRange = 6;
+    const maxChains = 4;
+    const initialDamage = 15;
+    const chainDamages = [10, 8, 5, 3];
+
+    // 射线检测：找第一个命中的实体或方块
+    let hitPoint = null;
+    let hitMob = null;
+    let hitBlock = null;
+
+    // 先做方块射线检测（50格远程）
+    let blockHitDist = maxRange;
+    if (this.game.world) {
+      const rayOrigin = new THREE.Vector3(eye.x, eye.y, eye.z);
+      const rayDir = new THREE.Vector3(dir.x, dir.y, dir.z);
+      const hit = this.game.world.raycast(rayOrigin, rayDir, maxRange);
+      if (hit) {
+        hitBlock = hit;
+        blockHitDist = hit.distance || Math.sqrt(
+          (hit.x + 0.5 - eye.x) ** 2 + (hit.y + 0.5 - eye.y) ** 2 + (hit.z + 0.5 - eye.z) ** 2
+        );
+      }
+    }
+
+    // 检测实体命中（取比方块更近的实体）
+    let mobHitDist = maxRange;
+    if (this.game.mobs && this.game.mobs.mobs) {
+      for (const mob of this.game.mobs.mobs) {
+        const dx = mob.position.x - eye.x;
+        const dy = (mob.position.y + 0.5) - eye.y;
+        const dz = mob.position.z - eye.z;
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (dist > maxRange) continue;
+        if (dist > blockHitDist) continue; // 方块更近，跳过此实体
+        // 检查方向
+        const dot = (dx * dir.x + dy * dir.y + dz * dir.z) / (dist || 1);
+        if (dot < 0.98) continue; // 窄锥检测
+        if (dist < mobHitDist) {
+          mobHitDist = dist;
+          hitMob = mob;
+        }
+      }
+    }
+
+    // 确定最终命中点
+    if (hitMob) {
+      hitPoint = { x: hitMob.position.x, y: hitMob.position.y + 0.5, z: hitMob.position.z };
+    } else if (hitBlock) {
+      hitPoint = { x: hitBlock.x + 0.5, y: hitBlock.y + 0.5, z: hitBlock.z + 0.5 };
+    } else {
+      // 如果什么都没命中，在视线末端生成效果
+      hitPoint = { x: eye.x + dir.x * maxRange, y: eye.y + dir.y * maxRange, z: eye.z + dir.z * maxRange };
+    }
+
+    // 命中方块时：小范围方块破坏（3x1x3 十字形）
+    if (hitBlock && this.game.world && this.game.destroyBlock) {
+      const bx = hitBlock.x;
+      const by = hitBlock.y;
+      const bz = hitBlock.z;
+      // 直接命中的方块
+      const blockId = this.game.world.getBlock(bx, by, bz);
+      if (blockId !== 0 && blockId !== BLOCK.BEDROCK) {
+        const def = BLOCK_DEFS[blockId];
+        if (!def || !def.name || !def.name.includes('黑曜石')) {
+          this.game.destroyBlock(bx, by, bz, false);
+        }
+      }
+      // 周围十字形方块（水平 4 方向 + 上下），形成小范围破坏
+      const offsets = [
+        [1, 0, 0], [-1, 0, 0],   // 东西
+        [0, 0, 1], [0, 0, -1],   // 南北
+        [0, 1, 0], [0, -1, 0],   // 上下
+      ];
+      for (const [dx, dy, dz] of offsets) {
+        const nx = bx + dx, ny = by + dy, nz = bz + dz;
+        const nid = this.game.world.getBlock(nx, ny, nz);
+        if (nid === 0 || nid === BLOCK.BEDROCK) continue;
+        const ndef = BLOCK_DEFS[nid];
+        if (ndef && ndef.name && ndef.name.includes('黑曜石')) continue;
+        this.game.destroyBlock(nx, ny, nz, false);
+      }
+    }
+
+    // 构建闪电链路点列表
+    const chainPoints = [
+      { x: eye.x + dir.x * 1.5, y: eye.y + dir.y * 1.5, z: eye.z + dir.z * 1.5 }, // 枪口
+      hitPoint, // 第一个命中点
+    ];
+
+    // 闪电链跳跃
+    const chainedMobs = new Set();
+    if (hitMob) {
+      hitMob.takeDamage(initialDamage);
+      chainedMobs.add(hitMob);
+      if (this.game.effects && this.game.effects.showDamageNumber) {
+        this.game.effects.showDamageNumber(hitMob.position.x, hitMob.position.y + 1, hitMob.position.z, initialDamage, '#66ddff');
+      }
+
+      // 链式跳跃
+      let currentPos = hitPoint;
+      let currentMob = hitMob;
+      for (let c = 0; c < maxChains; c++) {
+        let nextMob = null;
+        let nextDist = chainRange;
+        for (const mob of this.game.mobs.mobs) {
+          if (chainedMobs.has(mob)) continue;
+          const dx = mob.position.x - currentPos.x;
+          const dy = (mob.position.y + 0.5) - currentPos.y;
+          const dz = mob.position.z - currentPos.z;
+          const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          if (dist < nextDist) {
+            nextDist = dist;
+            nextMob = mob;
+          }
+        }
+        if (!nextMob) break;
+
+        // 添加到链路
+        chainPoints.push({ x: nextMob.position.x, y: nextMob.position.y + 0.5, z: nextMob.position.z });
+        nextMob.takeDamage(chainDamages[c] || 3);
+        chainedMobs.add(nextMob);
+        if (this.game.effects && this.game.effects.showDamageNumber) {
+          this.game.effects.showDamageNumber(nextMob.position.x, nextMob.position.y + 1, nextMob.position.z, chainDamages[c] || 3, '#66ddff');
+        }
+        currentPos = { x: nextMob.position.x, y: nextMob.position.y + 0.5, z: nextMob.position.z };
+      }
+    }
+
+    // 生成闪电链特效
+    if (this.game.effects) {
+      this.game.effects.createLightningChain(chainPoints);
+      // 在命中点生成电击冲击波（扩散环形特效）
+      if (this.game.effects.createElectricShockwave) {
+        this.game.effects.createElectricShockwave(hitPoint.x, hitPoint.y, hitPoint.z, 4);
+      }
+      // 在命中点生成地面电场（持续伤害区域）
+      if (this.game.effects.createElectricField) {
+        this.game.effects.createElectricField(hitPoint.x, hitPoint.y - 0.5, hitPoint.z, 3, 3);
+      }
+    }
+
+    // 对链式命中的实体施加眩晕效果
+    for (const mob of chainedMobs) {
+      mob._stunTimer = 2; // 眩晕2秒
+    }
+
+    // 电场区域持续伤害（3秒内每0.5秒对范围内实体造成伤害）
+    if (this.game.mobs && this.game.mobs.mobs) {
+      let fieldElapsed = 0;
+      const fieldInterval = setInterval(() => {
+        fieldElapsed += 0.5;
+        if (fieldElapsed > 3 || !this.game.mobs || !this.game.mobs.mobs) {
+          clearInterval(fieldInterval);
+          return;
+        }
+        for (const mob of this.game.mobs.mobs) {
+          const fdx = mob.position.x - hitPoint.x;
+          const fdy = (mob.position.y + 0.5) - hitPoint.y;
+          const fdz = mob.position.z - hitPoint.z;
+          const fdist = Math.sqrt(fdx * fdx + fdy * fdy + fdz * fdz);
+          if (fdist < 3) {
+            mob.takeDamage(2);
+            if (this.game.effects && this.game.effects.showDamageNumber) {
+              this.game.effects.showDamageNumber(mob.position.x, mob.position.y + 1, mob.position.z, 2, '#66ddff');
+            }
+          }
+        }
+      }, 500);
+    }
+
+    // 轻量枪口闪光
+    this.createMuzzleFlash(eye, dir, 0x66ddff, 0.1, 2, true);
+
+    // 屏幕震动
+    if (this.game.effects) {
+      this.game.effects.screenShake = Math.max(this.game.effects.screenShake || 0, 0.8);
+    }
+
+    if (this.game.sound) this.game.sound.thunderGun();
   }
 
   // 投掷物品 — 无限弹药
@@ -1636,10 +2287,7 @@ export class RangedSystem {
       const proj = this.projectiles[i];
       try {
         proj.update(dt);
-      } catch (e) {
-        console.warn('[RangedSystem] 投射物更新出错:', e);
-        proj.dead = true;
-      }
+      } catch (e) { proj.dead = true; }
       if (proj.dead) {
         proj.destroy();
         this.projectiles.splice(i, 1);

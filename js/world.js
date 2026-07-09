@@ -345,8 +345,29 @@ if (!arr.includes(key)) arr.push(key);
   // 洞穴判定
   isCave(x, y, z) {
     if (y < 3 || y > 40) return false;
+
+    // 普通小洞穴：中等频率噪声，产生细小分散的隧道
     const n = this.noiseCave.fbm3D(x * 0.05, y * 0.08, z * 0.05, 3, 0.5, 2);
-    return n > 0.35;
+    if (n > 0.35) return true;
+
+    // 天然大矿洞：极低频率噪声，仅在深层生成，稀疏但空间巨大
+    // 中心集中在 y=8~28 之间，使用二次衰减使边缘平滑过渡
+    if (y >= 5 && y <= 32) {
+      // 低频噪声决定大矿洞中心区域
+      const big = this.noiseCave.fbm3D(x * 0.012, y * 0.015, z * 0.012, 2, 0.5, 2);
+      // 阈值很高(>0.55)，保证大矿洞非常稀少
+      if (big > 0.55) {
+        // 中心层(y≈12~24)更容易成为大矿洞，边缘层需要更高阈值
+        const centerY = 18;
+        const dist = Math.abs(y - centerY);
+        const heightFactor = 1.0 - (dist / 14.0) * 0.15; // 中心0.55，边缘约0.567
+        if (big > 0.55 * heightFactor + 0.02) {
+          return true;
+        }
+      }
+    }
+
+    return false;
   }
 
   // 矿石分布

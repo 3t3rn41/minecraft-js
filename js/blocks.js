@@ -185,6 +185,10 @@ export const BLOCK = {
   BARRETT: 178,
   GATLING_AMMO: 179,
   BARRETT_AMMO: 180,
+  // ===== 英雄级武器 =====
+  DRAGON_BREATH: 181,   // 龙息炮 — 火焰锥喷射
+  THUNDER_GUN: 182,     // 雷霆链枪 — 闪电连锁
+  ANNIHILATOR: 183,     // 湮灭炮 — 引力漩涡
   // ===== 水生植物 =====
   SEAGRASS: 175,
   KELP: 176,
@@ -371,9 +375,13 @@ export const BLOCK_DEFS = {
   [BLOCK.BARRETT]: { name: '巴雷特', solid: false, transparent: true, textures: [175, 175, 175], drops: BLOCK.BARRETT },
   [BLOCK.GATLING_AMMO]: { name: '加特林子弹', solid: false, transparent: true, textures: [176, 176, 176], drops: BLOCK.GATLING_AMMO },
   [BLOCK.BARRETT_AMMO]: { name: '巴雷特子弹', solid: false, transparent: true, textures: [177, 177, 177], drops: BLOCK.BARRETT_AMMO },
+  // ===== 英雄级武器 =====
+  [BLOCK.DRAGON_BREATH]: { name: '龙息炮', solid: false, transparent: true, textures: [178, 178, 178], drops: BLOCK.DRAGON_BREATH },
+  [BLOCK.THUNDER_GUN]: { name: '雷霆链枪', solid: false, transparent: true, textures: [179, 179, 179], drops: BLOCK.THUNDER_GUN },
+  [BLOCK.ANNIHILATOR]: { name: '湮灭炮', solid: false, transparent: true, textures: [180, 180, 180], drops: BLOCK.ANNIHILATOR },
 // ===== 水生植物 =====
-[BLOCK.SEAGRASS]: { name: '海草', solid: false, transparent: true, textures: [172, 172, 172], drops: BLOCK.SEAGRASS },
-[BLOCK.KELP]: { name: '海带', solid: false, transparent: true, textures: [173, 173, 173], drops: BLOCK.KELP },
+[BLOCK.SEAGRASS]: { name: '海草', solid: false, transparent: true, textures: [172, 172, 172], drops: BLOCK.SEAGRASS, cross: true },
+[BLOCK.KELP]: { name: '海带', solid: false, transparent: true, textures: [173, 173, 173], drops: BLOCK.KELP, cross: true },
 };
 
 // ===== 可放置方块列表（用于背包） =====
@@ -417,6 +425,8 @@ export const PLACEABLE_BLOCKS = [
   // 枪械/弹药
   BLOCK.PISTOL, BLOCK.ROCKET_LAUNCHER, BLOCK.BULLET_ITEM, BLOCK.ROCKET_AMMO,
   BLOCK.GATLING, BLOCK.BARRETT, BLOCK.GATLING_AMMO, BLOCK.BARRETT_AMMO,
+  // 英雄级武器
+  BLOCK.DRAGON_BREATH, BLOCK.THUNDER_GUN, BLOCK.ANNIHILATOR,
   // 水生植物
   BLOCK.SEAGRASS, BLOCK.KELP,
 ];
@@ -1802,6 +1812,105 @@ export function generateTextureAtlas(THREE) {
         setPixel(ctx, 173, 0, x, y, c);
       }
     }
+  }
+
+  // Tile 178: 龙息炮（火焰喷射器图标 — 红橙色龙头造型）
+  clearTile(ctx, 178, 0);
+  // 喷射管
+  for (let x = 1; x <= 8; x++) {
+    setPixel(ctx, 178, 0, x, 6, '#8b0000');
+    setPixel(ctx, 178, 0, x, 7, '#cc3300');
+    setPixel(ctx, 178, 0, x, 8, '#8b0000');
+  }
+  // 管口火焰
+  for (let y = 4; y <= 10; y++) {
+    setPixel(ctx, 178, 0, 0, y, '#ff6600');
+    setPixel(ctx, 178, 0, 1, y, '#ff9900');
+  }
+  setPixel(ctx, 178, 0, 0, 5, '#ffcc00');
+  setPixel(ctx, 178, 0, 1, 5, '#ffff00');
+  // 燃料罐
+  for (let y = 8; y <= 13; y++) {
+    for (let x = 7; x <= 12; x++) {
+      setPixel(ctx, 178, 0, x, y, '#aa2200');
+    }
+  }
+  setPixel(ctx, 178, 0, 9, 8, '#ff4400');
+  setPixel(ctx, 178, 0, 10, 9, '#ff4400');
+  setPixel(ctx, 178, 0, 9, 10, '#ff4400');
+  // 握把
+  for (let y = 12; y <= 15; y++) {
+    setPixel(ctx, 178, 0, 10, y, '#3a1a00');
+    setPixel(ctx, 178, 0, 11, y, '#3a1a00');
+  }
+
+  // Tile 179: 雷霆链枪（电蓝色科幻枪械图标）
+  clearTile(ctx, 179, 0);
+  // 枪管（蓝色金属）
+  for (let x = 1; x <= 10; x++) {
+    setPixel(ctx, 179, 0, x, 6, '#0a3a6a');
+    setPixel(ctx, 179, 0, x, 7, '#1a6aaa');
+    setPixel(ctx, 179, 0, x, 8, '#0a3a6a');
+  }
+  // 管口电弧
+  setPixel(ctx, 179, 0, 0, 5, '#66ddff');
+  setPixel(ctx, 179, 0, 0, 6, '#aaeeff');
+  setPixel(ctx, 179, 0, 0, 7, '#aaeeff');
+  setPixel(ctx, 179, 0, 0, 8, '#66ddff');
+  setPixel(ctx, 179, 0, 1, 5, '#3399ff');
+  setPixel(ctx, 179, 0, 1, 9, '#3399ff');
+  // 能量核心（发光蓝）
+  for (let y = 9; y <= 12; y++) {
+    for (let x = 6; x <= 10; x++) {
+      setPixel(ctx, 179, 0, x, y, '#0a4a8a');
+    }
+  }
+  setPixel(ctx, 179, 0, 7, 10, '#66ddff');
+  setPixel(ctx, 179, 0, 8, 10, '#aaeeff');
+  setPixel(ctx, 179, 0, 9, 11, '#66ddff');
+  // 握把
+  for (let y = 12; y <= 15; y++) {
+    setPixel(ctx, 179, 0, 9, y, '#0a2a4a');
+    setPixel(ctx, 179, 0, 10, y, '#0a2a4a');
+  }
+  // 顶部电极
+  setPixel(ctx, 179, 0, 6, 5, '#66ddff');
+  setPixel(ctx, 179, 0, 7, 4, '#aaeeff');
+  setPixel(ctx, 179, 0, 8, 5, '#66ddff');
+
+  // Tile 180: 湮灭炮（紫色科幻炮图标 — 漩涡造型）
+  clearTile(ctx, 180, 0);
+  // 枪管（暗紫色）
+  for (let x = 2; x <= 9; x++) {
+    setPixel(ctx, 180, 0, x, 6, '#3a0a4a');
+    setPixel(ctx, 180, 0, x, 7, '#5a1a7a');
+    setPixel(ctx, 180, 0, x, 8, '#3a0a4a');
+  }
+  // 管口漩涡（紫色能量）
+  setPixel(ctx, 180, 0, 0, 6, '#aa44ff');
+  setPixel(ctx, 180, 0, 0, 7, '#dd88ff');
+  setPixel(ctx, 180, 0, 0, 8, '#aa44ff');
+  setPixel(ctx, 180, 0, 1, 5, '#cc66ff');
+  setPixel(ctx, 180, 0, 1, 9, '#cc66ff');
+  setPixel(ctx, 180, 0, 1, 7, '#ff44ff');
+  // 能量核心（紫红色发光）
+  for (let y = 8; y <= 13; y++) {
+    for (let x = 7; x <= 12; x++) {
+      setPixel(ctx, 180, 0, x, y, '#2a0a3a');
+    }
+  }
+  setPixel(ctx, 180, 0, 8, 9, '#cc44ff');
+  setPixel(ctx, 180, 0, 9, 10, '#ff66ff');
+  setPixel(ctx, 180, 0, 10, 9, '#cc44ff');
+  setPixel(ctx, 180, 0, 9, 11, '#aa22dd');
+  // 顶部能量条
+  setPixel(ctx, 180, 0, 5, 4, '#cc44ff');
+  setPixel(ctx, 180, 0, 6, 3, '#ff66ff');
+  setPixel(ctx, 180, 0, 7, 4, '#cc44ff');
+  // 握把
+  for (let y = 12; y <= 15; y++) {
+    setPixel(ctx, 180, 0, 10, y, '#1a0a2a');
+    setPixel(ctx, 180, 0, 11, y, '#1a0a2a');
   }
 
   const texture = new THREE.CanvasTexture(canvas);

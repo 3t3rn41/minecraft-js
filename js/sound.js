@@ -241,4 +241,67 @@ export class SoundSystem {
     this.sweep(120, 30, 0.35, 'sawtooth', 0.25);
     setTimeout(() => this.noise(0.1, 0.15, 4000), 10);
   }
+
+  // 龙息炮喷射（持续火焰轰鸣）
+  dragonBreath() {
+    if (!this.enabled || !this.ctx) return;
+    // 低频持续噪声 + 火焰嗤嗤声
+    this.noise(0.2, 0.18, 600);
+    this.sweep(150, 80, 0.2, 'sawtooth', 0.1);
+    // 额外高频嗤嗤
+    const bufferSize = this.ctx.sampleRate * 0.15;
+    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize) * 0.5;
+    }
+    const source = this.ctx.createBufferSource();
+    source.buffer = buffer;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'highpass';
+    filter.frequency.value = 2000;
+    const g = this.ctx.createGain();
+    g.gain.value = 0.12;
+    source.connect(filter);
+    filter.connect(g);
+    g.connect(this.master);
+    source.start();
+  }
+
+  // 雷霆链枪射击（电弧炸裂 + 雷鸣）
+  thunderGun() {
+    if (!this.enabled || !this.ctx) return;
+    // 高频电弧劈裂
+    this.noise(0.15, 0.2, 5000);
+    this.sweep(2000, 200, 0.15, 'square', 0.15);
+    // 延迟雷鸣
+    setTimeout(() => {
+      this.noise(0.4, 0.3, 400);
+      this.sweep(100, 40, 0.4, 'sawtooth', 0.2);
+    }, 50);
+  }
+
+  // 湮灭炮射击（低频蓄能 + 发射嗡鸣）
+  annihilator() {
+    if (!this.enabled || !this.ctx) return;
+    // 蓄能上升音
+    this.sweep(60, 300, 0.2, 'sine', 0.15);
+    // 发射低频脉冲
+    this.noise(0.25, 0.2, 300);
+    this.sweep(300, 50, 0.3, 'sawtooth', 0.15);
+  }
+
+  // 湮灭炮引力漩涡持续音（低频嗡嗡）
+  vortexHum() {
+    if (!this.enabled || !this.ctx) return;
+    this.tone(80, 0.3, 'sine', 0.1);
+    this.tone(120, 0.3, 'sine', 0.06);
+  }
+
+  // 湮灭炮内爆（反向爆破）
+  implosion() {
+    if (!this.enabled || !this.ctx) return;
+    this.sweep(400, 30, 0.3, 'sawtooth', 0.2);
+    this.noise(0.2, 0.2, 200);
+  }
 }

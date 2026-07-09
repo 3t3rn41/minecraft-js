@@ -533,7 +533,8 @@ export class Player {
 
   // 切换飞行模式
   toggleFly() {
-    // 允许所有游戏模式飞行
+    // 只有允许飞行的游戏模式才能切换飞行
+    if (!this.gamemodeConfig.canFly) return false;
     this.flying = !this.flying;
     this.velocity.y = 0;
     if (!this.flying) {
@@ -541,6 +542,7 @@ export class Player {
       this.fallStartY = null;
       this.onGround = false;
     }
+    return true;
   }
 
   // 检查是否可以使用方块（创造模式无限）

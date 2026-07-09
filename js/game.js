@@ -118,6 +118,10 @@ export class Game {
     this._gatlingIsFiring = false; // 加特林是否正在连发
     this._gatlingBlockDamage = new Map(); // 加特林方块累积伤害 key=blockKey, val=damage
 
+    // 龙息炮连射状态
+    this._dragonBreathFireCooldown = 0; // 龙息炮射击冷却计时器
+    this._dragonBreathIsFiring = false; // 龙息炮是否正在喷射
+
     // 巴雷特狙击镜状态
     this._barrettScoped = false;   // 狙击镜是否开启
     this._barrettFovTransition = 0; // FOV过渡进度 0~1
@@ -668,8 +672,9 @@ export class Game {
 
     // 飞行模式（双击空格 或 F）—— 移动端通过按钮触发
     if (!this.isMobile && this.input.consumeKey('KeyF')) {
-      this.player.toggleFly();
-      this.ui.showToast(this.player.flying ? '飞行模式: 开启' : '飞行模式: 关闭');
+      if (this.player.toggleFly()) {
+        this.ui.showToast(this.player.flying ? '飞行模式: 开启' : '飞行模式: 关闭');
+      }
     }
 
     // 切换人称视角（V键）—— 第一人称 → 第三人称(背后) → 第三人称(正面) → 第一人称
@@ -688,8 +693,9 @@ export class Game {
     if (!this.isMobile && this.input.consumeKey('Space')) {
       const now = performance.now();
       if (now - (this._lastSpaceTap || 0) < 300) {
-        this.player.toggleFly();
-        this.ui.showToast(this.player.flying ? '飞行模式: 开启' : '飞行模式: 关闭');
+        if (this.player.toggleFly()) {
+          this.ui.showToast(this.player.flying ? '飞行模式: 开启' : '飞行模式: 关闭');
+        }
         this._lastSpaceTap = 0; // 防止三连击重复触发
       } else {
         this._lastSpaceTap = now;
@@ -725,7 +731,7 @@ export class Game {
       this.miningTarget = null;
       this.miningProgress = 0;
 
-      // 加特林：按住左键连发
+      // 加特林 & 龙息炮：按住左键连发
       if (heldItem.id === BLOCK.GATLING) {
         if (this.input.mouseButtons.left) {
           this._gatlingIsFiring = true;
@@ -736,8 +742,20 @@ export class Game {
         } else {
           this._gatlingIsFiring = false;
         }
+      } else if (heldItem.id === BLOCK.DRAGON_BREATH) {
+        // 龙息炮：按住左键连射火焰投射物
+        if (this.input.mouseButtons.left) {
+          this._dragonBreathIsFiring = true;
+          if (this._dragonBreathFireCooldown <= 0) {
+            this.useRangedWeapon(heldItem.id);
+            this._dragonBreathFireCooldown = 0.12; // 每次射击间隔120ms
+          }
+        } else {
+          this._dragonBreathIsFiring = false;
+        }
       } else {
         this._gatlingIsFiring = false;
+        this._dragonBreathIsFiring = false;
         if (this.input.consumeLeftClick()) {
           this.useRangedWeapon(heldItem.id);
         }
@@ -754,6 +772,11 @@ export class Game {
       // 加特林冷却递减
       if (this._gatlingFireCooldown > 0) {
         this._gatlingFireCooldown -= dt;
+      }
+
+      // 龙息炮冷却递减
+      if (this._dragonBreathFireCooldown > 0) {
+        this._dragonBreathFireCooldown -= dt;
       }
     } else {
       // 挖掘方块（左键持续）—— PC端和移动端共用
@@ -977,9 +1000,12 @@ export class Game {
       if (scopeEl) scopeEl.classList.add('hidden');
     }
 
-    // 切换武器时停止加特林连发
+    // 切换武器时停止加特林连发和龙息炮喷射
     if (itemId !== BLOCK.GATLING) {
       this._gatlingIsFiring = false;
+    }
+    if (itemId !== BLOCK.DRAGON_BREATH) {
+      this._dragonBreathIsFiring = false;
     }
 
     const atlasTexture = this.blockMaterial ? this.blockMaterial.map : null;
@@ -1457,6 +1483,8 @@ export class Game {
     return blockId === BLOCK.BOW || blockId === BLOCK.CROSSBOW || blockId === BLOCK.TRIDENT ||
       blockId === BLOCK.PISTOL || blockId === BLOCK.ROCKET_LAUNCHER ||
       blockId === BLOCK.GATLING || blockId === BLOCK.BARRETT ||
+      blockId === BLOCK.DRAGON_BREATH || blockId === BLOCK.THUNDER_GUN ||
+      blockId === BLOCK.ANNIHILATOR ||
       blockId === BLOCK.SNOWBALL || blockId === BLOCK.EGG_ITEM ||
       blockId === BLOCK.ENDER_PEARL || blockId === BLOCK.FIREWORK_ROCKET;
   }
@@ -1493,6 +1521,12 @@ export class Game {
       this.useGatling();
     } else if (blockId === BLOCK.BARRETT) {
       this.useBarrett();
+    } else if (blockId === BLOCK.DRAGON_BREATH) {
+      this.useDragonBreath();
+    } else if (blockId === BLOCK.THUNDER_GUN) {
+      this.useThunderGun();
+    } else if (blockId === BLOCK.ANNIHILATOR) {
+      this.useAnnihilator();
     }
   }
 
@@ -1717,6 +1751,36 @@ this.ranged.shootBullet();
     this._attackAnimTimer = 0.4;
 
     this.ranged.shootSniper();
+  }
+
+// 使用龙息炮 — 发射火焰投射物
+useDragonBreath() {
+    if (!this.ranged) return;
+
+    if (this.heldItemViewModel) this.heldItemViewModel.triggerSwing();
+    this._attackAnimTimer = 0.1;
+
+    this.ranged.shootDragonBreath();
+  }
+
+  // 使用雷霆链枪 — 闪电链
+  useThunderGun() {
+    if (!this.ranged) return;
+
+    if (this.heldItemViewModel) this.heldItemViewModel.triggerSwing();
+    this._attackAnimTimer = 0.3;
+
+    this.ranged.shootThunderGun();
+  }
+
+  // 使用湮灭炮 — 量子球
+  useAnnihilator() {
+    if (!this.ranged) return;
+
+    if (this.heldItemViewModel) this.heldItemViewModel.triggerSwing();
+    this._attackAnimTimer = 0.5;
+
+    this.ranged.shootAnnihilator();
   }
 
   // 切换巴雷特狙击镜

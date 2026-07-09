@@ -278,8 +278,9 @@ export class MobileControls {
 
     // 飞行按钮：单次点击
     this.setupButton('mb-fly', null, () => {
-      this.game.player.toggleFly();
-      if (this.game.ui) this.game.ui.showToast(this.game.player.flying ? '飞行: 开启' : '飞行: 关闭');
+      if (this.game.player.toggleFly()) {
+        if (this.game.ui) this.game.ui.showToast(this.game.player.flying ? '飞行: 开启' : '飞行: 关闭');
+      }
     });
 
     // 背包按钮：单次点击

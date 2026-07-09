@@ -2149,6 +2149,44 @@ export class MobManager {
     // 更新生物
     for (let i = this.mobs.length - 1; i >= 0; i--) {
       const mob = this.mobs[i];
+
+      // 眩晕效果 — 被眩晕时无法移动和攻击
+      if (mob._stunTimer && mob._stunTimer > 0) {
+        mob._stunTimer -= dt;
+        mob.velocity.x = 0;
+        mob.velocity.z = 0;
+        // 眩晕时仍应用物理（重力），但不执行AI
+        if (!mob.dying) {
+          mob.updatePhysics(dt);
+          if (mob.mesh) {
+            mob.mesh.position.set(mob.position.x, mob.position.y, mob.position.z);
+            // 眩晕颤抖动画
+            mob.mesh.rotation.z = Math.sin(Date.now() * 0.02) * 0.1;
+          }
+          mob.updateHurtFlash(dt);
+          // 跳过正常AI更新
+          continue;
+        }
+      } else if (mob.mesh) {
+        mob.mesh.rotation.z = 0; // 恢复
+      }
+
+      // 灼烧效果 — 持续火焰伤害
+      if (mob._burnTimer && mob._burnTimer > 0) {
+        mob._burnTimer -= dt;
+        mob._burnTickTimer = (mob._burnTickTimer || 0) + dt;
+        if (mob._burnTickTimer >= 0.5) {
+          mob._burnTickTimer = 0;
+          mob.takeDamage(1);
+          // 火焰粒子
+          if (this.game.effects) {
+            this.game.effects.createBlockBreakParticles(
+              Math.floor(mob.position.x), Math.floor(mob.position.y + 0.5), Math.floor(mob.position.z), 0xff6600
+            );
+          }
+        }
+      }
+
       mob.update(dt, player);
 
       // 移除远离的生物
