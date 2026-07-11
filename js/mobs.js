@@ -18,6 +18,7 @@ class Entity {
     this.maxHealth = 10;
     this.dead = false;
     this.onGround = false;
+    this._speedScale = 1.0; // 冒险模式速度缩放
     this.width = 0.5;
     this.height = 1.4;
     this.mesh = null;
@@ -25,6 +26,17 @@ class Entity {
     this.hurtTimer = 0;
     this.dying = false;
     this.deathTimer = 0;
+
+    // 方块交互能力（僵尸专用）
+    this.canBreakBlocks = false;
+    this._blockPlaceCooldown = 0;
+    this._blocksPlaced = 0; // 已放置方块计数
+    this._maxBlocks = 5;   // 每只僵尸最多放置5个方块
+
+    // 卡住检测
+    this._stuckTimer = 0;
+    this._stuckLastX = x;
+    this._stuckLastZ = z;
   }
 
   getAABB() {
@@ -67,14 +79,16 @@ class Entity {
   }
 
   updatePhysics(dt) {
+    // 冒险模式速度缩放（仅影响水平移动，不影响重力）
+    const scale = this._speedScale || 1.0;
     // 重力
     this.velocity.y -= 28 * dt;
     if (this.velocity.y < -30) this.velocity.y = -30;
 
-    // 分轴碰撞
-    this.moveAxis('x', this.velocity.x * dt);
+    // 分轴碰撞（水平速度受缩放影响）
+    this.moveAxis('x', this.velocity.x * dt * scale);
     this.moveAxis('y', this.velocity.y * dt);
-    this.moveAxis('z', this.velocity.z * dt);
+    this.moveAxis('z', this.velocity.z * dt * scale);
 
     // 防止掉出世界
     if (this.position.y < -10) {
@@ -188,6 +202,112 @@ class Entity {
     const dy = this.position.y - y;
     const dz = this.position.z - z;
     return Math.sqrt(dx * dx + dy * dy + dz * dz);
+  }
+
+  // ===== 方块交互系统（僵尸仅放置方块） =====
+
+  // 僵尸在指定坐标放置方块
+  _placeBlockAt(bx, by, bz, blockId) {
+    if (by < 0 || by >= 128) return false;
+    const existing = this.world.getBlock(bx, by, bz);
+    if (existing !== 0) return false; // 已有方块
+
+    this.world.setBlock(bx, by, bz, blockId);
+
+    // 粒子特效
+    if (this.game && this.game.effects) {
+      this.game.effects.createBlockBreakParticles(bx, by, bz, blockId);
+    }
+    // 多人同步
+    if (this.game && this.game.multiplayer) {
+      this.game.multiplayer.sendBlockChange(bx, by, bz, blockId);
+    }
+    return true;
+  }
+
+  // 方块行为主逻辑：每帧由 MobManager 调用（仅放置方块，不破坏）
+  updateBlockBehavior(dt, player) {
+    if (!this.canBreakBlocks || this.dying || this.dead || !player || player.dead) return;
+    if (this._blocksPlaced >= this._maxBlocks) return; // 达到放置上限
+
+    this._blockPlaceCooldown -= dt;
+
+    const dx = player.position.x - this.position.x;
+    const dy = player.position.y - this.position.y;
+    const dz = player.position.z - this.position.z;
+    const distH = Math.sqrt(dx * dx + dz * dz);
+
+    // 玩家在高处且僵尸在地面上 → 放置方块垫高自己
+    if (dy > 2.0 && distH < 15 && this.onGround && this._blockPlaceCooldown <= 0) {
+      const bx = Math.floor(this.position.x);
+      const bz = Math.floor(this.position.z);
+      const footY = Math.floor(this.position.y - 0.1);
+      // 使用圆石作为放置方块
+      if (this._placeBlockAt(bx, footY, bz, BLOCK.COBBLESTONE)) {
+        this._blocksPlaced++;
+        this.velocity.y = 6;
+        this.onGround = false;
+        this._blockPlaceCooldown = 0.8;
+      }
+    }
+  }
+
+  // ===== 血量条显示系统 =====
+
+  // 创建头顶血量条
+  createHealthBar() {
+    if (this._healthBarMesh) return;
+
+    // 背景（黑色）
+    const bgGeom = new THREE.PlaneGeometry(1.0, 0.12);
+    const bgMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.6, depthTest: false });
+    this._healthBarBg = new THREE.Mesh(bgGeom, bgMat);
+    this._healthBarBg.renderOrder = 999;
+
+    // 前景（绿色血量）
+    const fgGeom = new THREE.PlaneGeometry(0.96, 0.08);
+    const fgMat = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.85, depthTest: false });
+    this._healthBarMesh = new THREE.Mesh(fgGeom, fgMat);
+    this._healthBarMesh.renderOrder = 1000;
+
+    // 放在头顶上方
+    const barY = this.height + 0.3;
+    this._healthBarBg.position.set(0, barY, 0);
+    this._healthBarMesh.position.set(0, barY, 0);
+
+    if (this.mesh) {
+      this.mesh.add(this._healthBarBg);
+      this.mesh.add(this._healthBarMesh);
+    }
+
+    this._healthBarBaseWidth = 0.96;
+  }
+
+  // 更新血量条显示
+  updateHealthBar(camera) {
+    if (!this._healthBarMesh) return;
+
+    const ratio = Math.max(0, this.health / this.maxHealth);
+
+    // 缩放血量条宽度
+    this._healthBarMesh.scale.x = ratio;
+    // 调整位置使其从左对齐
+    this._healthBarMesh.position.x = -(this._healthBarBaseWidth * (1 - ratio)) / 2;
+
+    // 颜色随血量变化
+    if (ratio > 0.6) {
+      this._healthBarMesh.material.color.setHex(0x00ff00); // 绿
+    } else if (ratio > 0.3) {
+      this._healthBarMesh.material.color.setHex(0xffff00); // 黄
+    } else {
+      this._healthBarMesh.material.color.setHex(0xff0000); // 红
+    }
+
+    // 始终面向相机
+    if (camera) {
+      this._healthBarBg.lookAt(camera.position);
+      this._healthBarMesh.lookAt(camera.position);
+    }
   }
 
   serialize() {
@@ -329,13 +449,16 @@ class Zombie extends Entity {
   constructor(world, x, y, z) {
     super(world, x, y, z);
     this.type = 'zombie';
-    this.health = 20;
-    this.maxHealth = 20;
+    this.health = 100;
+    this.maxHealth = 100;
     this.width = 0.5;
     this.height = 1.8;
     this.attackCooldown = 0;
     this.burnTimer = 0;
+    this.goldValue = 100; // 冒险模式击杀金币奖励
+    this.canBreakBlocks = true; // 僵尸可以破坏和建造方块
     this.createMesh();
+    this.createHealthBar();
   }
 
   createMesh() {
@@ -384,8 +507,8 @@ class Zombie extends Entity {
     if (this.dying) { this.updateDying(dt); return; }
     const distToPlayer = this.distanceTo(player.position.x, player.position.y, player.position.z);
 
-    // 追击玩家（距离 < 16）
-    if (distToPlayer < 16 && !player.dead) {
+    // 追击玩家（全图追踪）
+    if (!player.dead) {
       const dx = player.position.x - this.position.x;
       const dz = player.position.z - this.position.z;
       const len = Math.sqrt(dx * dx + dz * dz);
@@ -524,6 +647,17 @@ export class ItemDrop {
 
       // 拾取范围
       if (dist < 3.0) {
+        // 金币掉落：特殊处理
+        if (this.isGold && this.gold) {
+          if (this.world && this.world.game && this.world.game.onGoldPickup) {
+            this.world.game.onGoldPickup(this.gold);
+          } else if (player.gold !== undefined) {
+            player.gold += this.gold;
+          }
+          this.pickedUp = true;
+          this.dead = true;
+          return;
+        }
         const added = player.addItem(this.blockId, this.count, true);
         console.log('[PICKUP] attempt', { blockId: this.blockId, dist: dist.toFixed(2), added, inventory0: player.inventory[0] });
         if (added) {
@@ -2064,6 +2198,847 @@ class Fish extends Entity {
 }
 
 // 生物管理器
+// ===== 冒险模式新增怪物 =====
+
+// 疾跑僵尸 — 2×移动速度，低血
+class FastZombie extends Zombie {
+  constructor(world, x, y, z) {
+    super(world, x, y, z);
+    this.type = 'fast_z';
+    this.health = 60;
+    this.maxHealth = 60;
+this.goldValue = 10;
+this.createMesh();
+}
+createMesh() {
+const group = new THREE.Group();
+const bodyMat = new THREE.MeshLambertMaterial({ color: 0x8a2a2a });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.7, 0.25), bodyMat);
+    body.position.y = 1.0; group.add(body);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), new THREE.MeshLambertMaterial({ color: 0xaa3a3a }));
+    head.position.y = 1.6; group.add(head);
+    const armGeom = new THREE.BoxGeometry(0.2, 0.6, 0.2);
+    const leftArm = new THREE.Mesh(armGeom, bodyMat); leftArm.position.set(-0.35, 1.0, 0.3); group.add(leftArm);
+    const rightArm = new THREE.Mesh(armGeom, bodyMat); rightArm.position.set(0.35, 1.0, 0.3); group.add(rightArm);
+    this.arms = [leftArm, rightArm];
+    const legGeom = new THREE.BoxGeometry(0.2, 0.6, 0.2);
+    const leftLeg = new THREE.Mesh(legGeom, new THREE.MeshLambertMaterial({ color: 0x5a1a1a })); leftLeg.position.set(-0.12, 0.35, 0); group.add(leftLeg);
+    const rightLeg = new THREE.Mesh(legGeom, new THREE.MeshLambertMaterial({ color: 0x5a1a1a })); rightLeg.position.set(0.12, 0.35, 0); group.add(rightLeg);
+    this.legs = [leftLeg, rightLeg];
+    this.mesh = group;
+  }
+  update(dt, player) {
+    if (this.dying) { this.updateDying(dt); return; }
+    const distToPlayer = this.distanceTo(player.position.x, player.position.y, player.position.z);
+    if (!player.dead) {
+      const dx = player.position.x - this.position.x;
+      const dz = player.position.z - this.position.z;
+      const len = Math.sqrt(dx * dx + dz * dz);
+      if (len > 0) {
+        this.velocity.x = (dx / len) * 5.0;
+        this.velocity.z = (dz / len) * 5.0;
+        this.yaw = Math.atan2(dx, dz);
+      }
+      if (this.onGround) {
+        const ahead = { x: this.position.x + this.velocity.x * 0.3, y: this.position.y, z: this.position.z + this.velocity.z * 0.3 };
+        if (BLOCK_DEFS[this.world.getBlock(Math.floor(ahead.x), Math.floor(ahead.y), Math.floor(ahead.z))]?.solid) {
+          this.velocity.y = 8; this.onGround = false;
+        }
+      }
+      this.attackCooldown -= dt;
+      if (distToPlayer < 1.5 && this.attackCooldown <= 0) {
+        player.takeDamage(2); this.attackCooldown = 0.8;
+      }
+    }
+    this.updatePhysics(dt);
+    if (this.mesh) {
+      this.mesh.position.set(this.position.x, this.position.y, this.position.z);
+      this.mesh.rotation.y = this.yaw;
+      if (Math.abs(this.velocity.x) > 0.1 || Math.abs(this.velocity.z) > 0.1) {
+        const t = Date.now() * 0.012;
+        this.legs[0].rotation.x = Math.sin(t) * 0.6;
+        this.legs[1].rotation.x = -Math.sin(t) * 0.6;
+      }
+      if (this.arms) { this.arms[0].rotation.x = -Math.PI / 2; this.arms[1].rotation.x = -Math.PI / 2; }
+    }
+    this.updateHurtFlash(dt);
+  }
+  onDeath() { return []; }
+}
+
+// 爬行者 — 贴地爬行，从下方攻击
+class CrawlerZombie extends Zombie {
+  constructor(world, x, y, z) {
+    super(world, x, y, z);
+    this.type = 'crawler';
+    this.health = 80;
+    this.maxHealth = 80;
+this.height = 0.5;
+this.width = 0.5;
+this.goldValue = 10;
+    this.createMesh();
+  }
+  createMesh() {
+    const group = new THREE.Group();
+    const bodyMat = new THREE.MeshLambertMaterial({ color: 0x4a6a2a });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.3, 0.6), bodyMat);
+    body.position.y = 0.25; group.add(body);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.3, 0.35), new THREE.MeshLambertMaterial({ color: 0x6a8a4a }));
+    head.position.set(0, 0.3, 0.35); group.add(head);
+    const legGeom = new THREE.BoxGeometry(0.15, 0.15, 0.3);
+    const positions = [[-0.2, 0.1, 0.2], [0.2, 0.1, 0.2], [-0.2, 0.1, -0.2], [0.2, 0.1, -0.2]];
+    this.legs = [];
+    for (const pos of positions) {
+      const leg = new THREE.Mesh(legGeom, bodyMat);
+      leg.position.set(...pos); group.add(leg); this.legs.push(leg);
+    }
+    this.mesh = group;
+  }
+  update(dt, player) {
+    if (this.dying) { this.updateDying(dt); return; }
+    const distToPlayer = this.distanceTo(player.position.x, player.position.y, player.position.z);
+    if (!player.dead) {
+      const dx = player.position.x - this.position.x;
+      const dz = player.position.z - this.position.z;
+      const len = Math.sqrt(dx * dx + dz * dz);
+      if (len > 0) {
+        this.velocity.x = (dx / len) * 2.0;
+        this.velocity.z = (dz / len) * 2.0;
+        this.yaw = Math.atan2(dx, dz);
+      }
+      this.attackCooldown -= dt;
+      if (distToPlayer < 1.2 && this.attackCooldown <= 0) {
+        player.takeDamage(2); this.attackCooldown = 1.2;
+      }
+    }
+    this.updatePhysics(dt);
+    if (this.mesh) {
+      this.mesh.position.set(this.position.x, this.position.y, this.position.z);
+      this.mesh.rotation.y = this.yaw;
+      if (Math.abs(this.velocity.x) > 0.1 || Math.abs(this.velocity.z) > 0.1) {
+        const t = Date.now() * 0.008;
+        this.legs[0].rotation.x = Math.sin(t) * 0.3;
+        this.legs[1].rotation.x = -Math.sin(t) * 0.3;
+      }
+    }
+    this.updateHurtFlash(dt);
+  }
+  onDeath() { return []; }
+}
+
+// 肉盾僵尸 — 高血量，击退免疫，攻击7点
+class BruteZombie extends Zombie {
+  constructor(world, x, y, z) {
+    super(world, x, y, z);
+    this.type = 'brute';
+    this.health = 300;
+    this.maxHealth = 300;
+this.width = 0.8;
+this.height = 2.0;
+this.goldValue = 35;
+    this.knockbackImmune = true;
+    this.createMesh();
+  }
+  createMesh() {
+    const group = new THREE.Group();
+    const bodyMat = new THREE.MeshLambertMaterial({ color: 0x2a2a4a });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.0, 0.4), bodyMat);
+    body.position.y = 1.1; group.add(body);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.5, 0.55), new THREE.MeshLambertMaterial({ color: 0x3a3a5a }));
+    head.position.y = 1.85; group.add(head);
+    const armGeom = new THREE.BoxGeometry(0.3, 0.8, 0.3);
+    const leftArm = new THREE.Mesh(armGeom, bodyMat); leftArm.position.set(-0.55, 1.1, 0.3); group.add(leftArm);
+    const rightArm = new THREE.Mesh(armGeom, bodyMat); rightArm.position.set(0.55, 1.1, 0.3); group.add(rightArm);
+    this.arms = [leftArm, rightArm];
+    const legGeom = new THREE.BoxGeometry(0.3, 0.6, 0.3);
+    const leftLeg = new THREE.Mesh(legGeom, new THREE.MeshLambertMaterial({ color: 0x1a1a3a })); leftLeg.position.set(-0.2, 0.35, 0); group.add(leftLeg);
+    const rightLeg = new THREE.Mesh(legGeom, new THREE.MeshLambertMaterial({ color: 0x1a1a3a })); rightLeg.position.set(0.2, 0.35, 0); group.add(rightLeg);
+    this.legs = [leftLeg, rightLeg];
+    this.mesh = group;
+  }
+  takeDamage(amount, attackerX, attackerZ) {
+    if (this.dying || this.dead) return;
+    this.health -= amount;
+    this.hurtTimer = 0.3;
+    // 击退免疫：不施加击飞
+    if (this.health <= 0) { this.health = 0; this.dying = true; this.deathTimer = 2.0; }
+  }
+  update(dt, player) {
+    if (this.dying) { this.updateDying(dt); return; }
+    const distToPlayer = this.distanceTo(player.position.x, player.position.y, player.position.z);
+    if (!player.dead) {
+      const dx = player.position.x - this.position.x;
+      const dz = player.position.z - this.position.z;
+      const len = Math.sqrt(dx * dx + dz * dz);
+      if (len > 0) {
+        this.velocity.x = (dx / len) * 1.8;
+        this.velocity.z = (dz / len) * 1.8;
+        this.yaw = Math.atan2(dx, dz);
+      }
+      if (this.onGround) {
+        const ahead = { x: this.position.x + this.velocity.x * 0.4, y: this.position.y, z: this.position.z + this.velocity.z * 0.4 };
+        if (BLOCK_DEFS[this.world.getBlock(Math.floor(ahead.x), Math.floor(ahead.y), Math.floor(ahead.z))]?.solid) {
+          this.velocity.y = 8; this.onGround = false;
+        }
+      }
+      this.attackCooldown -= dt;
+      if (distToPlayer < 1.8 && this.attackCooldown <= 0) {
+        player.takeDamage(7); this.attackCooldown = 1.5;
+      }
+    }
+    this.updatePhysics(dt);
+    if (this.mesh) {
+      this.mesh.position.set(this.position.x, this.position.y, this.position.z);
+      this.mesh.rotation.y = this.yaw;
+      if (Math.abs(this.velocity.x) > 0.1 || Math.abs(this.velocity.z) > 0.1) {
+        const t = Date.now() * 0.005;
+        this.legs[0].rotation.x = Math.sin(t) * 0.3;
+        this.legs[1].rotation.x = -Math.sin(t) * 0.3;
+      }
+      if (this.arms) { this.arms[0].rotation.x = -Math.PI / 2.5; this.arms[1].rotation.x = -Math.PI / 2.5; }
+    }
+    this.updateHurtFlash(dt);
+  }
+  onDeath() { return []; }
+}
+
+// 爆炸僵尸 — 靠近玩家2格内自爆
+class BomberZombie extends Zombie {
+  constructor(world, x, y, z) {
+    super(world, x, y, z);
+    this.type = 'bomber';
+    this.health = 80;
+    this.maxHealth = 80;
+this.goldValue = 15;
+this.fuseTime = 0;
+    this.exploding = false;
+    this.createMesh();
+  }
+  createMesh() {
+    const group = new THREE.Group();
+    const bodyMat = new THREE.MeshLambertMaterial({ color: 0x6a4a1a });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.7, 0.25), bodyMat);
+    body.position.y = 1.0; group.add(body);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), new THREE.MeshLambertMaterial({ color: 0x8a6a2a }));
+    head.position.y = 1.6; group.add(head);
+    // 引信（红色小方块在头顶）
+    const fuse = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.15, 0.1), new THREE.MeshLambertMaterial({ color: 0xff0000, emissive: 0xff0000 }));
+    fuse.position.y = 1.9; group.add(fuse);
+    this.fuseMesh = fuse;
+    const armGeom = new THREE.BoxGeometry(0.2, 0.6, 0.2);
+    const leftArm = new THREE.Mesh(armGeom, bodyMat); leftArm.position.set(-0.35, 1.0, 0.3); group.add(leftArm);
+    const rightArm = new THREE.Mesh(armGeom, bodyMat); rightArm.position.set(0.35, 1.0, 0.3); group.add(rightArm);
+    this.arms = [leftArm, rightArm];
+    const legGeom = new THREE.BoxGeometry(0.2, 0.6, 0.2);
+    const leftLeg = new THREE.Mesh(legGeom, new THREE.MeshLambertMaterial({ color: 0x3a2a0a })); leftLeg.position.set(-0.12, 0.35, 0); group.add(leftLeg);
+    const rightLeg = new THREE.Mesh(legGeom, new THREE.MeshLambertMaterial({ color: 0x3a2a0a })); rightLeg.position.set(0.12, 0.35, 0); group.add(rightLeg);
+    this.legs = [leftLeg, rightLeg];
+    this.mesh = group;
+  }
+  update(dt, player) {
+    if (this.dying) { this.updateDying(dt); return; }
+    const distToPlayer = this.distanceTo(player.position.x, player.position.y, player.position.z);
+    if (!player.dead) {
+      const dx = player.position.x - this.position.x;
+      const dz = player.position.z - this.position.z;
+      const len = Math.sqrt(dx * dx + dz * dz);
+      if (len > 0) {
+        this.velocity.x = (dx / len) * 3.0;
+        this.velocity.z = (dz / len) * 3.0;
+        this.yaw = Math.atan2(dx, dz);
+      }
+      // 2格内自爆
+      if (distToPlayer < 2.0 && !this.exploding) {
+        this.exploding = true;
+        this.fuseTime = 0.5;
+      }
+      if (this.exploding) {
+        this.fuseTime -= dt;
+        // 引信闪烁
+        if (this.fuseMesh) {
+          this.fuseMesh.material.color.setRGB(1, Math.random() * 0.5, 0);
+        }
+        this.velocity.x = 0;
+        this.velocity.z = 0;
+        if (this.fuseTime <= 0) {
+          // 自爆
+          if (this.game && this.game.effects) {
+            this.game.effects.createExplosion(this.position.x, this.position.y + 0.5, this.position.z, 2);
+          }
+          this.health = 0;
+          this.dying = true;
+          this.deathTimer = 0.1;
+          this.dead = true;
+          return;
+        }
+      }
+    }
+    this.updatePhysics(dt);
+    if (this.mesh) {
+      this.mesh.position.set(this.position.x, this.position.y, this.position.z);
+      this.mesh.rotation.y = this.yaw;
+    }
+    this.updateHurtFlash(dt);
+  }
+  onDeath() { return []; }
+}
+
+// 召唤僵尸 — 每6秒召唤2个普通僵尸
+class SummonerZombie extends Zombie {
+  constructor(world, x, y, z) {
+    super(world, x, y, z);
+    this.type = 'summoner';
+    this.health = 150;
+    this.maxHealth = 150;
+this.goldValue = 25;
+this.summonTimer = 6;
+    this.createMesh();
+  }
+  createMesh() {
+    const group = new THREE.Group();
+    const bodyMat = new THREE.MeshLambertMaterial({ color: 0x5a2a8a });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.7, 0.25), bodyMat);
+    body.position.y = 1.0; group.add(body);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), new THREE.MeshLambertMaterial({ color: 0x7a4aaa }));
+    head.position.y = 1.6; group.add(head);
+    // 紫色光环
+    const aura = new THREE.Mesh(new THREE.SphereGeometry(0.6, 8, 6), new THREE.MeshBasicMaterial({ color: 0xaa44ff, transparent: true, opacity: 0.2 }));
+    aura.position.y = 1.0; group.add(aura);
+    this.auraMesh = aura;
+    const armGeom = new THREE.BoxGeometry(0.2, 0.6, 0.2);
+    const leftArm = new THREE.Mesh(armGeom, bodyMat); leftArm.position.set(-0.35, 1.0, 0.3); group.add(leftArm);
+    const rightArm = new THREE.Mesh(armGeom, bodyMat); rightArm.position.set(0.35, 1.0, 0.3); group.add(rightArm);
+    this.arms = [leftArm, rightArm];
+    const legGeom = new THREE.BoxGeometry(0.2, 0.6, 0.2);
+    const leftLeg = new THREE.Mesh(legGeom, new THREE.MeshLambertMaterial({ color: 0x3a1a5a })); leftLeg.position.set(-0.12, 0.35, 0); group.add(leftLeg);
+    const rightLeg = new THREE.Mesh(legGeom, new THREE.MeshLambertMaterial({ color: 0x3a1a5a })); rightLeg.position.set(0.12, 0.35, 0); group.add(rightLeg);
+    this.legs = [leftLeg, rightLeg];
+    this.mesh = group;
+  }
+  update(dt, player) {
+    if (this.dying) { this.updateDying(dt); return; }
+    const distToPlayer = this.distanceTo(player.position.x, player.position.y, player.position.z);
+    if (!player.dead) {
+      const dx = player.position.x - this.position.x;
+      const dz = player.position.z - this.position.z;
+      const len = Math.sqrt(dx * dx + dz * dz);
+      if (len > 0) {
+        this.velocity.x = (dx / len) * 1.5;
+        this.velocity.z = (dz / len) * 1.5;
+        this.yaw = Math.atan2(dx, dz);
+      }
+      this.attackCooldown -= dt;
+      if (distToPlayer < 1.5 && this.attackCooldown <= 0) {
+        player.takeDamage(3); this.attackCooldown = 1.0;
+      }
+      // 召唤
+      this.summonTimer -= dt;
+      if (this.summonTimer <= 0) {
+        this.summonTimer = 6;
+        if (this.game && this.game.mobs && this.game.mobs.mobs.length < 40) {
+          for (let i = 0; i < 2; i++) {
+            const sx = this.position.x + (Math.random() - 0.5) * 2;
+            const sz = this.position.z + (Math.random() - 0.5) * 2;
+            this.game.mobs.spawnMob(sx, this.position.y, sz, 'zombie');
+            const mob = this.game.mobs.mobs[this.game.mobs.mobs.length - 1];
+            if (mob) { mob.game = this.game; mob.goldValue = 100; }
+          }
+          if (this.game.ui) this.game.ui.showToast('⚠️ 召唤者召唤了僵尸！', 800);
+        }
+      }
+    }
+    this.updatePhysics(dt);
+    if (this.mesh) {
+      this.mesh.position.set(this.position.x, this.position.y, this.position.z);
+      this.mesh.rotation.y = this.yaw;
+      if (this.auraMesh) {
+        this.auraMesh.scale.setScalar(1 + Math.sin(Date.now() * 0.005) * 0.1);
+      }
+    }
+    this.updateHurtFlash(dt);
+  }
+  onDeath() { return []; }
+}
+
+// 寒冰僵尸 — 3格内减速光环
+class WinterZombie extends Zombie {
+  constructor(world, x, y, z) {
+    super(world, x, y, z);
+    this.type = 'winter_z';
+    this.health = 120;
+    this.maxHealth = 120;
+this.goldValue = 15;
+this.slowRadius = 3;
+    this.createMesh();
+  }
+  createMesh() {
+    const group = new THREE.Group();
+    const bodyMat = new THREE.MeshLambertMaterial({ color: 0x2a8aaa });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.7, 0.25), bodyMat);
+    body.position.y = 1.0; group.add(body);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), new THREE.MeshLambertMaterial({ color: 0x4aaacc }));
+    head.position.y = 1.6; group.add(head);
+    // 冰晶光环
+    const aura = new THREE.Mesh(new THREE.SphereGeometry(this.slowRadius, 8, 6), new THREE.MeshBasicMaterial({ color: 0x44ccff, transparent: true, opacity: 0.1, wireframe: true }));
+    aura.position.y = 1.0; group.add(aura);
+    this.auraMesh = aura;
+    const armGeom = new THREE.BoxGeometry(0.2, 0.6, 0.2);
+    const leftArm = new THREE.Mesh(armGeom, bodyMat); leftArm.position.set(-0.35, 1.0, 0.3); group.add(leftArm);
+    const rightArm = new THREE.Mesh(armGeom, bodyMat); rightArm.position.set(0.35, 1.0, 0.3); group.add(rightArm);
+    this.arms = [leftArm, rightArm];
+    const legGeom = new THREE.BoxGeometry(0.2, 0.6, 0.2);
+    const leftLeg = new THREE.Mesh(legGeom, new THREE.MeshLambertMaterial({ color: 0x1a5a7a })); leftLeg.position.set(-0.12, 0.35, 0); group.add(leftLeg);
+    const rightLeg = new THREE.Mesh(legGeom, new THREE.MeshLambertMaterial({ color: 0x1a5a7a })); rightLeg.position.set(0.12, 0.35, 0); group.add(rightLeg);
+    this.legs = [leftLeg, rightLeg];
+    this.mesh = group;
+  }
+  update(dt, player) {
+    if (this.dying) { this.updateDying(dt); return; }
+    const distToPlayer = this.distanceTo(player.position.x, player.position.y, player.position.z);
+    if (!player.dead) {
+      const dx = player.position.x - this.position.x;
+      const dz = player.position.z - this.position.z;
+      const len = Math.sqrt(dx * dx + dz * dz);
+      if (len > 0) {
+        this.velocity.x = (dx / len) * 2.2;
+        this.velocity.z = (dz / len) * 2.2;
+        this.yaw = Math.atan2(dx, dz);
+      }
+      this.attackCooldown -= dt;
+      if (distToPlayer < 1.5 && this.attackCooldown <= 0) {
+        player.takeDamage(2); this.attackCooldown = 1.0;
+      }
+      // 减速光环
+      if (distToPlayer < this.slowRadius) {
+        player.applySlow(this, 1.0);
+      }
+    }
+    this.updatePhysics(dt);
+    if (this.mesh) {
+      this.mesh.position.set(this.position.x, this.position.y, this.position.z);
+      this.mesh.rotation.y = this.yaw;
+      if (this.auraMesh) {
+        this.auraMesh.rotation.y += dt * 0.5;
+      }
+    }
+    this.updateHurtFlash(dt);
+  }
+  onDeath() { return []; }
+}
+
+// ===== Boss: 水晶守卫 =====
+class CrystalGuardian extends Entity {
+  constructor(world, x, y, z) {
+    super(world, x, y, z);
+    this.type = 'crystal_guardian';
+    this.health = 400;
+    this.maxHealth = 400;
+    this.width = 1.2;
+    this.height = 2.5;
+    this.goldValue = 1000;
+    this.attackCooldown = 0;
+    this.barrageTimer = 2;
+    this.summonTimer = 8;
+    this.phase = 1;
+    this.shieldActive = false;
+    this.shieldTimer = 0;
+    this.crystalPillars = [];
+    this.createMesh();
+  }
+  createMesh() {
+    const group = new THREE.Group();
+    const crystalMat = new THREE.MeshLambertMaterial({ color: 0x44aaff, emissive: 0x224488 });
+    // 身体 — 大水晶柱
+    const body = new THREE.Mesh(new THREE.OctahedronGeometry(0.8), crystalMat);
+    body.position.y = 1.3; body.scale.set(1, 1.5, 1); group.add(body); this.bodyMesh = body;
+    // 头部 — 小水晶
+    const head = new THREE.Mesh(new THREE.OctahedronGeometry(0.5), new THREE.MeshLambertMaterial({ color: 0x66ccff, emissive: 0x336699 }));
+    head.position.y = 2.2; group.add(head); this.headMesh = head;
+    // 底座
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.9, 0.3, 8), new THREE.MeshLambertMaterial({ color: 0x224466 }));
+    base.position.y = 0.15; group.add(base);
+    // 光环
+    const aura = new THREE.Mesh(new THREE.RingGeometry(1.0, 1.5, 16), new THREE.MeshBasicMaterial({ color: 0x44aaff, transparent: true, opacity: 0.3, side: THREE.DoubleSide }));
+    aura.rotation.x = -Math.PI / 2; aura.position.y = 0.2; group.add(aura); this.auraMesh = aura;
+    this.mesh = group;
+  }
+  takeDamage(amount, attackerX, attackerZ) {
+    if (this.dying || this.dead) return;
+    // Phase2护盾激活时减伤
+    if (this.shieldActive) {
+      amount *= 0.2;
+    }
+    this.health -= amount;
+    this.hurtTimer = 0.3;
+    if (this.health <= 0) { this.health = 0; this.dying = true; this.deathTimer = 3.0; }
+    // 阶段切换
+    if (this.phase === 1 && this.health < this.maxHealth * 0.5) {
+      this.enterPhase2();
+    }
+  }
+  enterPhase2() {
+    this.phase = 2;
+    this.shieldActive = true;
+    this.shieldTimer = 10;
+    if (this.game && this.game.ui) this.game.ui.showToast('⚠️ 水晶守卫进入第二阶段！', 2000);
+    if (this.game && this.game.sound) this.game.sound.bossRoar();
+  }
+  update(dt, player) {
+    if (this.dying) { this.updateDying(dt); return; }
+    const distToPlayer = this.distanceTo(player.position.x, player.position.y, player.position.z);
+    // 追踪玩家
+    if (distToPlayer < 30 && !player.dead) {
+      const dx = player.position.x - this.position.x;
+      const dz = player.position.z - this.position.z;
+      const len = Math.sqrt(dx * dx + dz * dz);
+      if (len > 2) {
+        const speed = this.phase === 2 ? 4.0 : 2.0;
+        this.velocity.x = (dx / len) * speed;
+        this.velocity.z = (dz / len) * speed;
+        this.yaw = Math.atan2(dx, dz);
+      } else {
+        this.velocity.x = 0;
+        this.velocity.z = 0;
+      }
+      // 近战攻击
+      this.attackCooldown -= dt;
+      if (distToPlayer < 2.5 && this.attackCooldown <= 0) {
+        player.takeDamage(5); this.attackCooldown = 1.5;
+      }
+      // 水晶弹幕
+      this.barrageTimer -= dt;
+      if (this.barrageTimer <= 0) {
+        this.barrageTimer = this.phase === 2 ? 1.5 : 2;
+        this.fireCrystalBarrage(player);
+      }
+      // 召唤护卫
+      this.summonTimer -= dt;
+      if (this.summonTimer <= 0) {
+        this.summonTimer = this.phase === 2 ? 10 : 8;
+        this.summonGuards();
+      }
+    }
+    // Phase2护盾计时
+    if (this.shieldActive) {
+      this.shieldTimer -= dt;
+      if (this.shieldTimer <= 0) {
+        this.shieldActive = false;
+        this.shieldTimer = 15;
+        if (this.game && this.game.ui) this.game.ui.showToast('水晶护盾暂时解除！', 1500);
+      } else {
+        // 护盾恢复期
+        this.health = Math.min(this.maxHealth * 0.5, this.health + 2 * dt);
+      }
+    } else if (this.phase === 2) {
+      this.shieldTimer -= dt;
+      if (this.shieldTimer <= 0) {
+        this.shieldActive = true;
+        this.shieldTimer = 10;
+        if (this.game && this.game.ui) this.game.ui.showToast('⚠️ 水晶守卫激活护盾！', 1500);
+      }
+    }
+    this.updateCrystalShards(dt, player);
+    this.updatePhysics(dt);
+    if (this.mesh) {
+      this.mesh.position.set(this.position.x, this.position.y, this.position.z);
+      this.mesh.rotation.y = this.yaw;
+      if (this.bodyMesh) this.bodyMesh.rotation.y += dt * 2;
+      if (this.headMesh) this.headMesh.rotation.y -= dt * 3;
+      if (this.auraMesh) {
+        this.auraMesh.rotation.z += dt * 0.5;
+        this.auraMesh.scale.setScalar(1 + Math.sin(Date.now() * 0.003) * 0.15);
+      }
+    }
+    this.updateHurtFlash(dt);
+  }
+  fireCrystalBarrage(player) {
+    if (!this.game) return;
+    if (!this._crystalShards) this._crystalShards = [];
+    const count = this.phase === 2 ? 5 : 3;
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2 + (this.phase === 2 ? Date.now() * 0.001 : 0);
+      let dir;
+      if (this.phase === 2) {
+        dir = { x: Math.cos(angle), y: 0, z: Math.sin(angle) };
+      } else {
+        const dx = player.position.x - this.position.x;
+        const dz = player.position.z - this.position.z;
+        const len = Math.sqrt(dx * dx + dz * dz) || 1;
+        const spread = (i - 1) * 0.3;
+        dir = {
+          x: dx / len * Math.cos(spread) - dz / len * Math.sin(spread),
+          y: 0,
+          z: dx / len * Math.sin(spread) + dz / len * Math.cos(spread),
+        };
+      }
+      // 创建水晶弹射物（自管理）
+      const geom = new THREE.OctahedronGeometry(0.2);
+      const mat = new THREE.MeshLambertMaterial({ color: 0x44aaff, emissive: 0x224488 });
+      const mesh = new THREE.Mesh(geom, mat);
+      mesh.position.set(this.position.x, this.position.y + 1.5, this.position.z);
+      this.game.scene.add(mesh);
+      this._crystalShards.push({
+        mesh, dir,
+        velocity: { x: dir.x * 15, y: dir.y * 15, z: dir.z * 15 },
+        life: 0, maxLife: 5, damage: 4,
+      });
+    }
+    if (this.game && this.game.sound) this.game.sound.tone(600, 0.1, 'sine', 0.15);
+  }
+  updateCrystalShards(dt, player) {
+    if (!this._crystalShards) return;
+    for (let i = this._crystalShards.length - 1; i >= 0; i--) {
+      const s = this._crystalShards[i];
+      s.life += dt;
+      s.mesh.position.x += s.velocity.x * dt;
+      s.mesh.position.y += s.velocity.y * dt;
+      s.mesh.position.z += s.velocity.z * dt;
+      s.mesh.rotation.y += dt * 5;
+      // 碰撞检测
+      const dist = Math.sqrt(
+        (s.mesh.position.x - player.position.x) ** 2 +
+        (s.mesh.position.y - (player.position.y + 0.9)) ** 2 +
+        (s.mesh.position.z - player.position.z) ** 2
+      );
+      if (dist < 1.0) {
+        player.takeDamage(s.damage);
+        this.game.scene.remove(s.mesh);
+        s.mesh.geometry.dispose();
+        s.mesh.material.dispose();
+        this._crystalShards.splice(i, 1);
+        continue;
+      }
+      if (s.life >= s.maxLife) {
+        this.game.scene.remove(s.mesh);
+        s.mesh.geometry.dispose();
+        s.mesh.material.dispose();
+        this._crystalShards.splice(i, 1);
+      }
+    }
+  }
+  summonGuards() {
+    if (!this.game || !this.game.mobs) return;
+    const count = this.phase === 2 ? 1 : 2; // Phase2召唤爆炸僵尸
+    for (let i = 0; i < count; i++) {
+      const sx = this.position.x + (Math.random() - 0.5) * 3;
+      const sz = this.position.z + (Math.random() - 0.5) * 3;
+      const type = this.phase === 2 ? 'bomber' : 'crawler';
+      this.game.mobs.spawnMob(sx, this.position.y, sz, type);
+    }
+    if (this.game && this.game.ui) this.game.ui.showToast('水晶守卫召唤了护卫！', 1000);
+  }
+  onDeath() { return []; }
+}
+
+// ===== Boss: 僵尸君主 =====
+class ZombieKing extends Entity {
+  constructor(world, x, y, z) {
+    super(world, x, y, z);
+    this.type = 'zombie_king';
+    this.health = 500;
+    this.maxHealth = 500;
+    this.width = 1.0;
+    this.height = 2.8;
+    this.goldValue = 2000;
+    this.attackCooldown = 0;
+    this.slamTimer = 4;
+    this.summonTimer = 10;
+    this.chargeTimer = 8;
+    this.phase = 1;
+    this.invulnerable = false;
+    this.invulnTimer = 0;
+    this.stormTimer = 0;
+    this.isCharging = false;
+    this.chargeDir = { x: 0, z: 0 };
+    this.createMesh();
+  }
+  createMesh() {
+    const group = new THREE.Group();
+    const robeMat = new THREE.MeshLambertMaterial({ color: 0x2a1a3a });
+    const crownMat = new THREE.MeshLambertMaterial({ color: 0xffaa00, emissive: 0x554400 });
+    // 身体 — 黑色长袍
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.4, 0.4), robeMat);
+    body.position.y = 1.2; group.add(body); this.bodyMesh = body;
+    // 头
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), new THREE.MeshLambertMaterial({ color: 0x3a2a4a }));
+    head.position.y = 2.2; group.add(head); this.headMesh = head;
+    // 王冠
+    const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 0.2, 5), crownMat);
+    crown.position.y = 2.55; group.add(crown);
+    // 肩甲
+    const shoulderGeom = new THREE.BoxGeometry(0.3, 0.3, 0.3);
+    const leftShoulder = new THREE.Mesh(shoulderGeom, crownMat); leftShoulder.position.set(-0.55, 1.8, 0); group.add(leftShoulder);
+    const rightShoulder = new THREE.Mesh(shoulderGeom, crownMat); rightShoulder.position.set(0.55, 1.8, 0); group.add(rightShoulder);
+    // 手臂
+    const armGeom = new THREE.BoxGeometry(0.25, 0.8, 0.25);
+    const leftArm = new THREE.Mesh(armGeom, robeMat); leftArm.position.set(-0.55, 1.2, 0.2); group.add(leftArm);
+    const rightArm = new THREE.Mesh(armGeom, robeMat); rightArm.position.set(0.55, 1.2, 0.2); group.add(rightArm);
+    this.arms = [leftArm, rightArm];
+    // 腿
+    const legGeom = new THREE.BoxGeometry(0.3, 0.6, 0.3);
+    const leftLeg = new THREE.Mesh(legGeom, new THREE.MeshLambertMaterial({ color: 0x1a0a2a })); leftLeg.position.set(-0.2, 0.35, 0); group.add(leftLeg);
+    const rightLeg = new THREE.Mesh(legGeom, new THREE.MeshLambertMaterial({ color: 0x1a0a2a })); rightLeg.position.set(0.2, 0.35, 0); group.add(rightLeg);
+    this.legs = [leftLeg, rightLeg];
+    this.mesh = group;
+  }
+  takeDamage(amount, attackerX, attackerZ) {
+    if (this.dying || this.dead) return;
+    if (this.invulnerable) {
+      if (this.game && this.game.ui) this.game.ui.showToast('僵尸君主无敌中！', 500);
+      return;
+    }
+    this.health -= amount;
+    this.hurtTimer = 0.3;
+    if (this.health <= 0) { this.health = 0; this.dying = true; this.deathTimer = 3.0; }
+    // 阶段切换
+    if (this.phase === 1 && this.health < this.maxHealth * 0.66) this.enterPhase2();
+    if (this.phase === 2 && this.health < this.maxHealth * 0.33) this.enterPhase3();
+  }
+  enterPhase2() {
+    this.phase = 2;
+    if (this.game && this.game.ui) this.game.ui.showToast('⚠️ 僵尸君主进入第二阶段！', 2000);
+    if (this.game && this.game.sound) this.game.sound.bossRoar();
+    this.summonTimer = 1;
+  }
+  enterPhase3() {
+    this.phase = 3;
+    this.stormTimer = 0;
+    this.invulnTimer = 5;
+    if (this.game && this.game.ui) this.game.ui.showToast('⚠️ 僵尸君主进入最终阶段！僵尸风暴！', 2000);
+    if (this.game && this.game.sound) this.game.sound.bossRoar();
+  }
+  update(dt, player) {
+    if (this.dying) { this.updateDying(dt); return; }
+    // 无敌护盾计时
+    if (this.invulnTimer > 0) {
+      this.invulnTimer -= dt;
+      this.invulnerable = true;
+      if (this.mesh) this.mesh.children.forEach(c => { if (c.material) c.material.emissive = c.material.emissive || new THREE.Color(0); });
+    } else if (this.phase === 3) {
+      this.invulnerable = false;
+      this.invulnTimer = 5; // 5s间隔无敌
+    } else {
+      this.invulnerable = false;
+    }
+    const distToPlayer = this.distanceTo(player.position.x, player.position.y, player.position.z);
+    if (distToPlayer < 35 && !player.dead) {
+      const dx = player.position.x - this.position.x;
+      const dz = player.position.z - this.position.z;
+      const len = Math.sqrt(dx * dx + dz * dz);
+      // 移动
+      if (this.isCharging) {
+        // 冲锋
+        this.velocity.x = this.chargeDir.x * 12;
+        this.velocity.z = this.chargeDir.z * 12;
+        this.chargeTime -= dt;
+        if (this.chargeTime <= 0) {
+          this.isCharging = false;
+        }
+        // 冲锋路径上玩家击退+伤害
+        if (distToPlayer < 2.0) {
+          player.takeDamage(6);
+          player.velocity.x = this.chargeDir.x * 10;
+          player.velocity.z = this.chargeDir.z * 10;
+          player.velocity.y = 5;
+        }
+      } else if (len > 2) {
+        const speed = this.phase >= 2 ? 4.0 : 2.5;
+        this.velocity.x = (dx / len) * speed;
+        this.velocity.z = (dz / len) * speed;
+        this.yaw = Math.atan2(dx, dz);
+      } else {
+        this.velocity.x = 0; this.velocity.z = 0;
+      }
+      // 近战
+      this.attackCooldown -= dt;
+      if (distToPlayer < 2.5 && this.attackCooldown <= 0) {
+        player.takeDamage(6); this.attackCooldown = 1.5;
+      }
+      // 捶地AOE
+      this.slamTimer -= dt;
+      if (this.slamTimer <= 0) {
+        this.slamTimer = this.phase === 3 ? 2 : 4;
+        this.slamAttack(player);
+      }
+      // Phase2: 召唤+冲锋
+      if (this.phase >= 2) {
+        this.summonTimer -= dt;
+        if (this.summonTimer <= 0) {
+          this.summonTimer = 15;
+          this.summonBrutes();
+        }
+        this.chargeTimer -= dt;
+        if (this.chargeTimer <= 0 && !this.isCharging) {
+          this.chargeTimer = 10;
+          this.startCharge(dx, dz, len);
+        }
+      }
+      // Phase3: 僵尸风暴
+      if (this.phase === 3) {
+        this.stormTimer -= dt;
+        if (this.stormTimer <= 0) {
+          this.stormTimer = 2;
+          if (this.game && this.game.mobs && this.game.mobs.mobs.length < 40) {
+            this.game.mobs.spawnMob(
+              this.position.x + (Math.random() - 0.5) * 4,
+              this.position.y,
+              this.position.z + (Math.random() - 0.5) * 4,
+              'fast_z'
+            );
+          }
+        }
+      }
+    }
+    this.updatePhysics(dt);
+    if (this.mesh) {
+      this.mesh.position.set(this.position.x, this.position.y, this.position.z);
+      this.mesh.rotation.y = this.yaw;
+      // 无敌时闪烁
+      if (this.invulnerable && this.bodyMesh) {
+        this.bodyMesh.material.emissive = new THREE.Color(0x444446);
+      }
+    }
+    this.updateHurtFlash(dt);
+  }
+  slamAttack(player) {
+    const dist = this.distanceTo(player.position.x, player.position.y, player.position.z);
+    if (dist < 5) {
+      player.takeDamage(4);
+      const dx = player.position.x - this.position.x;
+      const dz = player.position.z - this.position.z;
+      const len = Math.sqrt(dx * dx + dz * dz) || 1;
+      player.velocity.x = (dx / len) * 10;
+      player.velocity.z = (dz / len) * 10;
+      player.velocity.y = 6;
+    }
+    // AOE特效
+    if (this.game && this.game.effects) {
+      this.game.effects.createBlockBreakParticles(Math.floor(this.position.x), Math.floor(this.position.y), Math.floor(this.position.z), 0x884422);
+    }
+    if (this.game && this.game.sound) {
+      this.game.sound.noise(0.3, 0.3, 200);
+    }
+  }
+  summonBrutes() {
+    if (!this.game || !this.game.mobs) return;
+    for (let i = 0; i < 4; i++) {
+      const sx = this.position.x + (Math.random() - 0.5) * 5;
+      const sz = this.position.z + (Math.random() - 0.5) * 5;
+      this.game.mobs.spawnMob(sx, this.position.y, sz, 'brute');
+    }
+    if (this.game && this.game.ui) this.game.ui.showToast('僵尸君主召唤了肉盾僵尸！', 1500);
+  }
+  startCharge(dx, dz, len) {
+    this.isCharging = true;
+    this.chargeTime = 1.5;
+    if (len > 0) {
+      this.chargeDir = { x: dx / len, z: dz / len };
+    }
+    if (this.game && this.game.ui) this.game.ui.showToast('僵尸君主开始冲锋！', 800);
+  }
+  onDeath() { return []; }
+}
+
 export class MobManager {
   constructor(game) {
     this.game = game;
@@ -2091,7 +3066,7 @@ export class MobManager {
     let mob;
     if (type === 'pig') {
       mob = new Pig(this.game.world, x, y, z);
-    } else if (type === 'zombie') {
+    } else if (type === 'zombie' || type === 'normal') {
       mob = new Zombie(this.game.world, x, y, z);
       mob.game = this.game;
     } else if (type === 'creeper') {
@@ -2127,13 +3102,89 @@ export class MobManager {
       mob = new EnderDragon(this.game.world, x, y, z);
       mob.game = this.game;
       if (this.game.ui) this.game.ui.showToast('⚠️ 末影龙已召唤！');
+    } else if (type === 'fast_z') {
+      mob = new FastZombie(this.game.world, x, y, z);
+      mob.game = this.game;
+    } else if (type === 'crawler') {
+      mob = new CrawlerZombie(this.game.world, x, y, z);
+      mob.game = this.game;
+    } else if (type === 'brute') {
+      mob = new BruteZombie(this.game.world, x, y, z);
+      mob.game = this.game;
+    } else if (type === 'bomber') {
+      mob = new BomberZombie(this.game.world, x, y, z);
+      mob.game = this.game;
+    } else if (type === 'summoner') {
+      mob = new SummonerZombie(this.game.world, x, y, z);
+      mob.game = this.game;
+    } else if (type === 'winter_z') {
+      mob = new WinterZombie(this.game.world, x, y, z);
+      mob.game = this.game;
+    } else if (type === 'crystal_guardian') {
+      mob = new CrystalGuardian(this.game.world, x, y, z);
+      mob.game = this.game;
+      if (this.game.ui) this.game.ui.showToast('⚠️ 水晶守卫出现了！');
+    } else if (type === 'zombie_king') {
+      mob = new ZombieKing(this.game.world, x, y, z);
+      mob.game = this.game;
+      if (this.game.ui) this.game.ui.showToast('⚠️ 僵尸君主降临了！');
     }
 
     if (mob) {
       mob.game = this.game;
+      // 冒险模式：应用速度缩放
+      if (this._speedScale !== undefined) {
+        mob._speedScale = this._speedScale;
+      }
       this.mobs.push(mob);
       if (mob.mesh) this.game.scene.add(mob.mesh);
     }
+  }
+
+  // 冒险模式：金币掉落
+  spawnGoldDrop(x, y, z, amount) {
+    // 使用 ItemDrop 实体，blockId=GOLD_BLOCK(41) 作为金币外观
+    const drop = new ItemDrop(this.game.world, x, y, z, 41, 1);
+    drop.gold = amount;
+    drop.isGold = true;
+    this.drops.push(drop);
+    if (drop.mesh) this.game.scene.add(drop.mesh);
+  }
+
+  // 冒险模式：怪物死亡钩子
+  onMobKilled(mob) {
+    if (this.game.onMobKilled) {
+      this.game.onMobKilled(mob, mob._killerId || null);
+    }
+  }
+
+  // 查找最近的玩家（支持多人模式）
+  _findNearestPlayer(mob) {
+    const localPlayer = this.game.player;
+    if (!localPlayer) return null;
+
+    let nearest = localPlayer;
+    let nearestDist = mob.distanceTo(localPlayer.position.x, localPlayer.position.y, localPlayer.position.z);
+
+    // 检查远程玩家
+    if (this.game.multiplayer && this.game.multiplayer.remotePlayers) {
+      for (const [id, rp] of this.game.multiplayer.remotePlayers) {
+        if (!rp.position) continue;
+        const dist = mob.distanceTo(rp.position.x, rp.position.y, rp.position.z);
+        if (dist < nearestDist) {
+          nearestDist = dist;
+          nearest = rp;
+        }
+      }
+    }
+
+    return nearest;
+  }
+
+  // 设置冒险模式（禁用常规刷怪 + 削减移速）
+  setAdventureMode(enabled) {
+    this._adventureMode = enabled;
+    this._speedScale = enabled ? 0.6 : 1.0; // 冒险模式：僵尸移速降至60%
   }
 
   spawnDrop(x, y, z, blockId, count = 1) {
@@ -2177,21 +3228,177 @@ export class MobManager {
         mob._burnTickTimer = (mob._burnTickTimer || 0) + dt;
         if (mob._burnTickTimer >= 0.5) {
           mob._burnTickTimer = 0;
-          mob.takeDamage(1);
+          const burnDmg = 5;
+          mob.takeDamage(burnDmg);
           // 火焰粒子
           if (this.game.effects) {
             this.game.effects.createBlockBreakParticles(
               Math.floor(mob.position.x), Math.floor(mob.position.y + 0.5), Math.floor(mob.position.z), 0xff6600
             );
+            // 灼烧伤害数字
+            if (this.game.effects.showDamageNumber) {
+              this.game.effects.showDamageNumber(mob.position.x, mob.position.y + 1, mob.position.z, burnDmg, '#ff6600');
+            }
           }
         }
       }
 
-      mob.update(dt, player);
+      // 查找最近的玩家（支持多人模式）
+      const nearestPlayer = this._findNearestPlayer(mob) || player;
 
-      // 移除远离的生物
+      // === 卡住检测：周期性检查位移，3秒未有效移动则传送 ===
+      if (!mob.dying && !mob.dead) {
+        mob._stuckCheckTimer = (mob._stuckCheckTimer || 0) + dt;
+
+        // 每0.5秒检查一次位移（避免帧间抖动误判）
+        if (mob._stuckCheckTimer >= 0.5) {
+          mob._stuckCheckTimer = 0;
+          const movedX = mob.position.x - mob._stuckLastX;
+          const movedZ = mob.position.z - mob._stuckLastZ;
+          const movedDist = Math.sqrt(movedX * movedX + movedZ * movedZ);
+          // 降低速度阈值到0.1，检测更多慢速移动的僵尸
+          const tryingToMove = Math.abs(mob.velocity.x) > 0.1 || Math.abs(mob.velocity.z) > 0.1;
+          const hasTarget = nearestPlayer && !nearestPlayer.dead &&
+            mob.distanceTo(nearestPlayer.position.x, mob.position.y, nearestPlayer.position.z) < 40;
+
+          // 检查僵尸是否在水中
+          const blockAtFeet = this.game.world.getBlock(
+            Math.floor(mob.position.x), Math.floor(mob.position.y + 0.5), Math.floor(mob.position.z)
+          );
+          const inWater = blockAtFeet === BLOCK.WATER;
+
+          // 需要移动但0.5秒内位移不足0.5格 → 累积卡住计时
+          // 水中僵尸也累积（更短阈值，因为水中移动慢）
+          const stuckThreshold = inWater ? 0.3 : 0.5;
+          if ((tryingToMove || hasTarget) && movedDist < stuckThreshold) {
+            mob._stuckTimer += 0.5;
+          } else {
+            mob._stuckTimer = 0;
+          }
+          // 更新参考位置
+          mob._stuckLastX = mob.position.x;
+          mob._stuckLastZ = mob.position.z;
+        }
+
+        // 超过3秒卡住 → 传送到安全位置
+        if (mob._stuckTimer >= 3.0) {
+          const dx = nearestPlayer.position.x - mob.position.x;
+          const dz = nearestPlayer.position.z - mob.position.z;
+          const len = Math.sqrt(dx * dx + dz * dz);
+
+          // 尝试多个方向和距离，找到安全位置
+          const directions = [];
+          if (len > 0) {
+            // 朝玩家方向
+            directions.push({ cos: dx / len, sin: dz / len });
+            // 左偏45度
+            directions.push({ cos: (dx - dz) / len * 0.707, sin: (dz + dx) / len * 0.707 });
+            // 右偏45度
+            directions.push({ cos: (dx + dz) / len * 0.707, sin: (dz - dx) / len * 0.707 });
+          }
+          // 随机方向
+          for (let r = 0; r < 4; r++) {
+            const ang = Math.random() * Math.PI * 2;
+            directions.push({ cos: Math.cos(ang), sin: Math.sin(ang) });
+          }
+
+          const distances = [3, 4, 2, 5];
+          let teleported = false;
+
+          for (const dir of directions) {
+            if (teleported) break;
+            for (const dist of distances) {
+              const tx = mob.position.x + dir.cos * dist;
+              const tz = mob.position.z + dir.sin * dist;
+              const bx = Math.floor(tx);
+              const bz = Math.floor(tz);
+
+              // 检查目标位置是否安全：脚下有固体方块、身体位置是空气、不在水中
+              let safeY = -1;
+              for (let yOff = -2; yOff <= 3; yOff++) {
+                const checkY = Math.floor(mob.position.y) + yOff;
+                if (checkY < 0 || checkY >= 128) continue;
+                const blockFeet = this.game.world.getBlock(bx, checkY, bz);
+                const blockHead = this.game.world.getBlock(bx, checkY + 1, bz);
+                const blockBelow = this.game.world.getBlock(bx, checkY - 1, bz);
+                const defFeet = BLOCK_DEFS[blockFeet];
+                const defHead = BLOCK_DEFS[blockHead];
+                const defBelow = BLOCK_DEFS[blockBelow];
+                // 脚下和头部是空气（非固体），且下方有固体方块支撑，且不在水中
+                if ((!defFeet || !defFeet.solid) && (!defHead || !defHead.solid) &&
+                    defBelow && defBelow.solid &&
+                    blockFeet !== BLOCK.WATER && blockHead !== BLOCK.WATER) {
+                  safeY = checkY;
+                  break;
+                }
+              }
+
+              if (safeY >= 0) {
+                mob.position.x = tx;
+                mob.position.z = tz;
+                mob.position.y = safeY;
+                if (mob.mesh) {
+                  mob.mesh.position.set(mob.position.x, mob.position.y, mob.position.z);
+                }
+                // 粒子特效
+                if (this.game.effects) {
+                  this.game.effects.createBlockBreakParticles(
+                    Math.floor(mob.position.x), Math.floor(mob.position.y + 0.5),
+                    Math.floor(mob.position.z), 0xaa00ff
+                  );
+                }
+                teleported = true;
+                break;
+              }
+            }
+          }
+
+          // 如果所有方向都找不到安全位置，强制原地向上传送（最后手段）
+          if (!teleported) {
+            const bx = Math.floor(mob.position.x);
+            const bz = Math.floor(mob.position.z);
+            for (let yOff = 1; yOff <= 5; yOff++) {
+              const checkY = Math.floor(mob.position.y) + yOff;
+              const blockFeet = this.game.world.getBlock(bx, checkY, bz);
+              const blockHead = this.game.world.getBlock(bx, checkY + 1, bz);
+              const defFeet = BLOCK_DEFS[blockFeet];
+              const defHead = BLOCK_DEFS[blockHead];
+              if ((!defFeet || !defFeet.solid) && (!defHead || !defHead.solid)) {
+                mob.position.y = checkY;
+                if (mob.mesh) {
+                  mob.mesh.position.set(mob.position.x, mob.position.y, mob.position.z);
+                }
+                if (this.game.effects) {
+                  this.game.effects.createBlockBreakParticles(
+                    bx, Math.floor(mob.position.y + 0.5), bz, 0xaa00ff
+                  );
+                }
+                break;
+              }
+            }
+          }
+
+          mob._stuckTimer = 0;
+          mob._stuckLastX = mob.position.x;
+          mob._stuckLastZ = mob.position.z;
+        }
+      }
+
+      mob.update(dt, nearestPlayer);
+
+      // 方块交互行为（僵尸破坏/建造方块）
+      if (mob.updateBlockBehavior) {
+        mob.updateBlockBehavior(dt, nearestPlayer);
+      }
+
+      // 更新血量条
+      if (mob.updateHealthBar) {
+        mob.updateHealthBar(this.game.camera);
+      }
+
+      // 移除远离的生物（扩大到120格以支持全图追踪）
       const dist = mob.distanceTo(player.position.x, player.position.y, player.position.z);
-      if (dist > 80) {
+      if (dist > 120) {
         if (mob.mesh) {
           this.game.scene.remove(mob.mesh);
           this._disposeMobMesh(mob);
@@ -2202,10 +3409,24 @@ export class MobManager {
 
       // 移除死亡的生物
       if (mob.dead) {
+        // 冒险模式：金币掉落 + 击杀钩子
+        if (mob.goldValue && mob.goldValue > 0) {
+          this.spawnGoldDrop(mob.position.x, mob.position.y, mob.position.z, mob.goldValue);
+        }
+        this.onMobKilled(mob);
         // 掉落物
         const drops = mob.onDeath();
         for (const drop of drops) {
           this.spawnDrop(mob.position.x, mob.position.y, mob.position.z, drop.id, drop.count);
+        }
+        // 清理 Boss 的水晶弹
+        if (mob._crystalShards) {
+          for (const s of mob._crystalShards) {
+            this.game.scene.remove(s.mesh);
+            s.mesh.geometry.dispose();
+            s.mesh.material.dispose();
+          }
+          mob._crystalShards = [];
         }
         if (mob.mesh) {
           this.game.scene.remove(mob.mesh);
@@ -2245,6 +3466,8 @@ export class MobManager {
     }
 
     // 定时生成生物（仅主机生成，客户端通过同步接收）
+    // 冒险模式禁用常规刷怪
+    if (this._adventureMode) return;
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) {
       this.spawnTimer = 5 + Math.random() * 5;

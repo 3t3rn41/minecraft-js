@@ -363,6 +363,37 @@ box-sizing: border-box;
   z-index: 10;
 }
 
+/* ===== 雷达地图 ===== */
+#radar-container {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  width: 160px;
+  height: 160px;
+  z-index: 15;
+  pointer-events: none;
+}
+
+#radar-canvas {
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0 12px rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.35);
+}
+
+#radar-label {
+  position: absolute;
+  bottom: -20px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+  text-align: center;
+  white-space: nowrap;
+}
+
 #crosshair::before,
 #crosshair::after {
   content: '';
@@ -396,6 +427,7 @@ box-sizing: border-box;
   text-shadow: 1px 1px 2px #000;
   z-index: 10;
   pointer-events: none;
+  transition: top 0.3s, left 0.3s;
 }
 
 #coords-display {
@@ -408,6 +440,18 @@ box-sizing: border-box;
   text-shadow: 1px 1px 2px #000;
   z-index: 10;
   pointer-events: none;
+  transition: top 0.3s, left 0.3s;
+}
+
+/* 雷达显示时，FPS和坐标移到雷达下方 */
+#game-container.radar-active #fps-display {
+  top: 180px;
+  left: 12px;
+}
+
+#game-container.radar-active #coords-display {
+  top: 200px;
+  left: 12px;
 }
 
 #time-display {
@@ -879,6 +923,22 @@ box-sizing: border-box;
 /* ===== 加载界面 ===== */
 .loading-content {
   background: rgba(0,0,0,0.85);
+}
+
+/* ===== 开发者密码框 ===== */
+.dev-password-panel {
+  background: linear-gradient(180deg, #2a2a2a 0%, #1a1a1a 100%);
+  border: 2px solid #555;
+  border-radius: 8px;
+  padding: 30px;
+  width: 340px;
+  text-align: center;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+}
+
+.dev-password-panel h2 {
+  margin-bottom: 8px;
+  color: #ffd700;
 }
 
 .loading-bar {
@@ -1701,4 +1761,788 @@ body.mobile #crosshair {
   height: 100%;
   background: rgba(0, 0, 0, 0.7);
   box-shadow: 0 0 2px rgba(255, 255, 255, 0.3);
+}
+
+/* ================================================================
+   冒险模式 HUD 样式
+   ================================================================ */
+
+.adventure-hud {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  pointer-events: none;
+  z-index: 500;
+  font-family: 'Segoe UI', sans-serif;
+}
+
+.adventure-hud.hidden { display: none; }
+
+/* 顶部中央：波次信息 */
+.adv-wave-banner {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  padding: 6px 24px;
+  border-radius: 8px;
+  font-size: 18px;
+  font-weight: bold;
+  text-shadow: 1px 1px 3px rgba(0,0,0,0.8);
+  border: 1px solid rgba(255,255,255,0.15);
+  white-space: nowrap;
+}
+
+.adv-wave-banner.banner-flash {
+  animation: adv-banner-flash 0.6s ease;
+}
+
+@keyframes adv-banner-flash {
+  0% { transform: translateX(-50%) scale(1.3); background: rgba(200,50,50,0.9); }
+  100% { transform: translateX(-50%) scale(1); background: rgba(0,0,0,0.7); }
+}
+
+.adv-map-name {
+  position: absolute;
+  top: 44px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #aaa;
+  font-size: 13px;
+  text-shadow: 1px 1px 2px rgba(0,0,0,0.9);
+}
+
+.adv-mob-counter {
+  position: absolute;
+  top: 62px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #ff6b6b;
+  font-size: 14px;
+  font-weight: bold;
+  text-shadow: 1px 1px 2px rgba(0,0,0,0.9);
+}
+
+/* 波次间倒计时 */
+.adv-intermission {
+  position: absolute;
+  top: 88px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 100, 200, 0.8);
+  color: #fff;
+  padding: 4px 16px;
+  border-radius: 6px;
+  font-size: 16px;
+  font-weight: bold;
+  animation: adv-pulse 1s ease infinite;
+}
+
+.adv-intermission.hidden { display: none; }
+
+@keyframes adv-pulse {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 1; }
+}
+
+/* 左下：个人状态 */
+.adv-player-status {
+  position: absolute;
+  bottom: 80px;
+  left: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.adv-gold {
+  background: rgba(0, 0, 0, 0.6);
+  color: #ffd700;
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 16px;
+  font-weight: bold;
+  text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+  border: 1px solid rgba(255,215,0,0.2);
+}
+
+.adv-skill-pts {
+  background: rgba(0, 0, 0, 0.6);
+  color: #5b9eff;
+  padding: 3px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: bold;
+}
+
+/* 右下：队友条 */
+.adv-teammates {
+  position: absolute;
+  bottom: 80px;
+  right: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 200px;
+}
+
+.teammate-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #fff;
+}
+
+.teammate-name { min-width: 50px; }
+
+.teammate-hp-track {
+  flex: 1;
+  height: 6px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.teammate-hp-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #e74c3c, #2ecc71);
+  transition: width 0.3s;
+}
+
+.teammate-gold {
+  color: #ffd700;
+  font-size: 11px;
+}
+
+/* 底中央：Boss血条 */
+.adv-bossbar {
+  position: absolute;
+  bottom: 110px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 400px;
+  max-width: 60vw;
+  text-align: center;
+}
+
+.adv-bossbar.hidden { display: none; }
+
+.adv-boss-name {
+  color: #ff4444;
+  font-size: 16px;
+  font-weight: bold;
+  text-shadow: 1px 1px 3px rgba(0,0,0,0.9);
+  margin-bottom: 4px;
+}
+
+.boss-hp-track {
+  height: 14px;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 7px;
+  overflow: hidden;
+  border: 1px solid rgba(255,0,0,0.3);
+}
+
+.boss-hp-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #8b0000, #ff0000, #ff4444);
+  transition: width 0.3s;
+  width: 100%;
+}
+
+.adv-boss-phase {
+  color: #ff8888;
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+/* ===== 商店面板 ===== */
+.adv-shop {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 460px;
+  max-width: 90vw;
+  max-height: 80vh;
+  background: rgba(20, 20, 30, 0.95);
+  border: 2px solid rgba(255,255,255,0.15);
+  border-radius: 12px;
+  padding: 20px;
+  pointer-events: auto;
+  overflow-y: auto;
+  color: #fff;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+
+.adv-shop.hidden { display: none; }
+
+.adv-shop-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.adv-shop-header h2 { margin: 0; font-size: 22px; }
+
+.adv-close-btn {
+  background: rgba(255,0,0,0.3);
+  border: none;
+  color: #fff;
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 16px;
+  transition: background 0.2s;
+}
+
+.adv-close-btn:hover { background: rgba(255,0,0,0.6); }
+
+.shop-categories {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.shop-cat-btn {
+  flex: 1;
+  padding: 6px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: #aaa;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+
+.shop-cat-btn.active {
+  background: rgba(91,158,255,0.2);
+  border-color: #5b9eff;
+  color: #fff;
+}
+
+.shop-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 350px;
+  overflow-y: auto;
+}
+
+.shop-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.shop-item.disabled { opacity: 0.4; }
+
+.shop-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.shop-item-name { font-size: 15px; color: #fff; }
+.shop-item-price { font-size: 13px; color: #ffd700; }
+.shop-hero-info { font-size: 11px; color: #aaa; margin-top: 2px; }
+
+.shop-buy-btn {
+  padding: 6px 18px;
+  background: linear-gradient(135deg, #2ecc71, #27ae60);
+  border: none;
+  color: #fff;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: bold;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+
+.shop-buy-btn:hover { transform: scale(1.05); }
+.shop-buy-btn:disabled { background: #555; cursor: not-allowed; transform: none; }
+
+.shop-my-gold {
+  margin-top: 12px;
+  text-align: center;
+  color: #ffd700;
+  font-size: 16px;
+  font-weight: bold;
+}
+
+/* ===== 技能树面板 ===== */
+.adv-skills {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 640px;
+  max-width: 92vw;
+  max-height: 85vh;
+  background: rgba(20, 20, 30, 0.95);
+  border: 2px solid rgba(255,255,255,0.15);
+  border-radius: 12px;
+  padding: 20px;
+  pointer-events: auto;
+  overflow-y: auto;
+  color: #fff;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+
+.adv-skills.hidden { display: none; }
+
+.adv-skills-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.adv-skills-header h2 { margin: 0; font-size: 22px; }
+
+.adv-skill-points {
+  text-align: center;
+  color: #5b9eff;
+  font-size: 16px;
+  font-weight: bold;
+  margin-bottom: 16px;
+}
+
+.skill-tree-cols {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+}
+
+.skill-col {
+  flex: 1;
+  max-width: 200px;
+}
+
+.skill-col h3 {
+  text-align: center;
+  font-size: 16px;
+  margin-bottom: 12px;
+}
+
+.skill-slot {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.skill-slot.maxed {
+  border-color: rgba(255,215,0,0.3);
+  background: rgba(255,215,0,0.05);
+}
+
+.skill-slot.upgradable {
+  border-color: rgba(91,158,255,0.3);
+  cursor: pointer;
+}
+
+.skill-name { font-size: 13px; font-weight: bold; margin-bottom: 4px; }
+.skill-level { color: #ffd700; font-size: 12px; margin-bottom: 4px; letter-spacing: 2px; }
+.skill-desc { font-size: 11px; color: #aaa; margin-bottom: 6px; }
+
+.skill-upgrade-btn {
+  padding: 4px 14px;
+  background: rgba(91,158,255,0.3);
+  border: 1px solid #5b9eff;
+  color: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+
+.skill-upgrade-btn:hover:not(:disabled) { background: rgba(91,158,255,0.6); }
+.skill-upgrade-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+/* ===== 每日任务 ===== */
+.adv-daily {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 400px;
+  max-width: 90vw;
+  background: rgba(20, 20, 30, 0.95);
+  border: 2px solid rgba(255,255,255,0.15);
+  border-radius: 12px;
+  padding: 20px;
+  pointer-events: auto;
+  color: #fff;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+
+.adv-daily.hidden { display: none; }
+
+.adv-daily-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.adv-daily-header h2 { margin: 0; font-size: 20px; }
+
+.daily-mission {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+}
+
+.daily-mission.completed {
+  border-color: rgba(46,204,113,0.3);
+  background: rgba(46,204,113,0.05);
+}
+
+.mission-desc { font-size: 14px; margin-bottom: 6px; }
+
+.mission-progress-bar {
+  height: 6px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+
+.mission-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #5b9eff, #2ecc71);
+  transition: width 0.3s;
+}
+
+.mission-info {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #aaa;
+}
+
+.mission-done { color: #2ecc71; font-weight: bold; }
+
+/* ===== 结算弹窗 ===== */
+.adv-grade {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  z-index: 600;
+}
+
+.adv-grade.hidden { display: none; }
+
+.grade-content {
+  background: rgba(30, 30, 40, 0.95);
+  border: 2px solid rgba(255,255,255,0.2);
+  border-radius: 16px;
+  padding: 40px;
+  text-align: center;
+  color: #fff;
+  min-width: 360px;
+  max-width: 90vw;
+}
+
+.grade-badge {
+  font-size: 100px;
+  font-weight: bold;
+  line-height: 1;
+  margin-bottom: 20px;
+}
+
+.grade-detail {
+  text-align: left;
+  margin-bottom: 20px;
+}
+
+.grade-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  font-size: 14px;
+}
+
+.grade-reward {
+  font-size: 18px;
+  margin-bottom: 24px;
+}
+
+.reward-total {
+  font-size: 22px;
+  color: #ffd700;
+  font-weight: bold;
+  margin-top: 8px;
+}
+
+.grade-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+/* ===== 死亡覆盖层 ===== */
+.adv-death-overlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(100, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 550;
+}
+
+.adv-death-overlay.hidden { display: none; }
+
+.death-text {
+  font-size: 36px;
+  color: #ff4444;
+  font-weight: bold;
+  text-shadow: 2px 2px 8px rgba(0,0,0,0.9);
+  margin-bottom: 16px;
+}
+
+.respawn-timer {
+  font-size: 48px;
+  color: #fff;
+  font-weight: bold;
+  text-shadow: 2px 2px 8px rgba(0,0,0,0.9);
+}
+
+.death-hint {
+  font-size: 14px;
+  color: #aaa;
+  margin-top: 8px;
+}
+
+/* ===== 冒险模式 Toast ===== */
+.adv-toast {
+  position: absolute;
+  top: 120px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  padding: 8px 20px;
+  border-radius: 8px;
+  font-size: 15px;
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+  z-index: 580;
+}
+
+.adv-toast.show { opacity: 1; }
+
+/* ===== 排行榜面板 ===== */
+.adv-leaderboard {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 560px;
+  max-width: 92vw;
+  max-height: 80vh;
+  background: rgba(20, 20, 30, 0.95);
+  border: 2px solid rgba(255,255,255,0.15);
+  border-radius: 12px;
+  padding: 20px;
+  pointer-events: auto;
+  overflow-y: auto;
+  color: #fff;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+
+.adv-leaderboard.hidden { display: none; }
+
+.adv-leaderboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.adv-leaderboard-header h2 { margin: 0; font-size: 22px; }
+
+.leaderboard-week {
+  text-align: center;
+  color: #aaa;
+  font-size: 13px;
+  margin-bottom: 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+.leaderboard-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lb-empty {
+  text-align: center;
+  color: #888;
+  padding: 40px 0;
+  font-size: 15px;
+}
+
+.lb-row {
+  display: grid;
+  grid-template-columns: 40px 36px 1fr 80px 60px 70px 36px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(255,255,255,0.04);
+  border-radius: 6px;
+  font-size: 13px;
+  transition: background 0.15s;
+}
+
+.lb-row:hover { background: rgba(255,255,255,0.08); }
+
+.lb-row.lb-top {
+  background: rgba(255,215,0,0.06);
+  border: 1px solid rgba(255,215,0,0.15);
+}
+
+.lb-rank {
+  text-align: center;
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.lb-grade {
+  text-align: center;
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.lb-name {
+  font-weight: bold;
+  color: #fff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lb-map { color: #aaa; font-size: 12px; }
+.lb-time { color: #5b9eff; font-size: 12px; text-align: right; }
+.lb-gold { color: #ffd700; font-size: 12px; text-align: right; }
+.lb-players { color: #aaa; font-size: 11px; text-align: center; }
+
+/* ===== 移动端适配 ===== */
+@media (max-width: 768px) {
+  .adv-wave-banner { font-size: 14px; padding: 4px 16px; }
+  .adv-map-name { font-size: 11px; }
+  .adv-mob-counter { font-size: 12px; }
+  .adv-gold { font-size: 14px; padding: 3px 8px; }
+  .adv-bossbar { width: 280px; bottom: 90px; }
+  .adv-shop, .adv-skills, .adv-daily, .adv-leaderboard { width: 92vw; padding: 12px; }
+  .skill-tree-cols { flex-direction: column; gap: 8px; }
+  .skill-col { max-width: 100%; }
+  .grade-badge { font-size: 70px; }
+  .grade-content { padding: 24px; min-width: auto; }
+  .lb-row {
+    grid-template-columns: 30px 28px 1fr 50px 50px;
+    font-size: 11px;
+    gap: 4px;
+    padding: 6px 8px;
+  }
+  .lb-row .lb-map, .lb-row .lb-players { display: none; }
+  .lb-grade { font-size: 14px; }
+  .adv-teammates { max-width: 140px; }
+  .teammate-bar { font-size: 10px; padding: 2px 6px; }
+}
+
+/* ===== 冒险模式地图选择 ===== */
+.adv-map-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  max-width: 900px;
+  margin: 0 auto 20px;
+}
+
+.adv-map-card {
+  background: rgba(40, 40, 50, 0.9);
+  border: 3px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  padding: 20px;
+  text-align: center;
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+.adv-map-card:hover {
+  background: rgba(60, 60, 80, 0.9);
+  transform: translateY(-3px);
+  border-color: #5b9eff;
+}
+
+.adv-map-icon { font-size: 48px; margin-bottom: 8px; }
+.adv-map-name { font-size: 20px; color: #fff; margin-bottom: 6px; font-weight: bold; }
+.adv-map-desc { font-size: 13px; color: #aaa; margin-bottom: 10px; line-height: 1.5; }
+.adv-map-info { display: flex; justify-content: center; gap: 16px; font-size: 13px; color: #5b9eff; margin-bottom: 12px; }
+.adv-map-start-btn { width: 100%; }
+
+/* 商店键盘导航高亮 */
+.shop-item.keyboard-selected {
+  background: rgba(91,158,255,0.25) !important;
+  border: 1px solid #5b9eff !important;
+}
+.shop-cat-btn.keyboard-selected {
+background: rgba(91,158,255,0.3) !important;
+border-color: #5b9eff !important;
+}
+
+/* 商店键盘提示 */
+.shop-keyboard-hint {
+margin-top: 8px;
+text-align: center;
+font-size: 11px;
+color: #888;
+padding: 6px;
+border-top: 1px solid rgba(255,255,255,0.1);
+}
+
+/* 分类按钮数字标签 */
+.cat-key-hint {
+display: inline-block;
+min-width: 16px;
+height: 16px;
+line-height: 16px;
+font-size: 10px;
+text-align: center;
+background: rgba(255,255,255,0.15);
+border-radius: 3px;
+margin-left: 4px;
+padding: 0 3px;
+}
+
+.shop-cat-btn.active .cat-key-hint {
+background: rgba(91,158,255,0.4);
+color: #fff;
 }

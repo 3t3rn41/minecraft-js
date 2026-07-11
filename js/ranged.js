@@ -698,6 +698,7 @@ export class Projectile {
 
     // 确保 dt 有效
     if (!dt || dt <= 0) dt = 0.016;
+    this._dt = dt;
 
     this.lifetime += dt;
     if (this.lifetime > this.maxLifetime) {
@@ -779,7 +780,7 @@ export class Projectile {
     }
 
     // 实体碰撞检测
-    this.checkEntityCollision();
+    this.checkEntityCollision(dt);
 
     // 特殊效果
     this.updateSpecial(dt);
@@ -891,6 +892,25 @@ export class Projectile {
   }
 
   onBlockHit(x, y, z) {
+    // 检查是否击中TNT方块 — 射击引爆TNT
+    const hitBlockId = this.game.world.getBlock(x, y, z);
+    if (hitBlockId === BLOCK.TNT) {
+      // 移除TNT方块
+      this.game.world.setBlock(x, y, z, 0);
+      // 立即触发爆炸（破坏方块 + 范围伤害）
+      if (this.game.effects) {
+        try {
+          this.game.effects.createExplosion(x + 0.5, y + 0.5, z + 0.5, 4);
+        } catch (e) { /* 忽略 */ }
+      }
+      // 音效
+      if (this.game.sound && this.game.sound.explosion) {
+        this.game.sound.explosion();
+      }
+      this.dead = true;
+      return;
+    }
+
     if (this.onHitBlock) {
       this.onHitBlock(x, y, z, this);
       return;
@@ -1044,20 +1064,62 @@ export class Projectile {
     }
   }
 
-  checkEntityCollision() {
+  // 检查点是否在生物的 AABB 盒内（带边距扩展）
+  _pointInMobAABB(px, py, pz, mob, padding) {
+    return px >= mob.position.x - mob.width / 2 - padding &&
+           px <= mob.position.x + mob.width / 2 + padding &&
+           py >= mob.position.y - padding &&
+           py <= mob.position.y + mob.height + padding &&
+           pz >= mob.position.z - mob.width / 2 - padding &&
+           pz <= mob.position.z + mob.width / 2 + padding;
+  }
+
+  checkEntityCollision(dt) {
     if (!this.game.mobs || !this.game.mobs.mobs) return;
+
+    if (!dt) dt = this._dt || 0.016;
+
+    // 计算本帧位移用于扫掠检测（防止高速弹穿透实体）
+    const moveX = this.velocity.x * dt;
+    const moveY = this.velocity.y * dt;
+    const moveZ = this.velocity.z * dt;
+    const moveDist = Math.sqrt(moveX * moveX + moveY * moveY + moveZ * moveZ);
+    const numSteps = Math.max(1, Math.ceil(moveDist * 2)); // 每0.5格检查一次
+    const oldX = this.position.x - moveX;
+    const oldY = this.position.y - moveY;
+    const oldZ = this.position.z - moveZ;
+    const padding = 0.25;
 
     for (const mob of this.game.mobs.mobs) {
       if (this.hitEntities.has(mob.id)) continue;
       if (this.owner === mob) continue;
 
-      const dx = mob.position.x - this.position.x;
-      const dy = (mob.position.y + mob.height / 2) - this.position.y;
-      const dz = mob.position.z - this.position.z;
-      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      // AABB 盒检测 + 扫掠检测
+      let hit = false;
+      let hitY = this.position.y; // 记录命中时的 y 坐标用于爆头判定
+      for (let s = 1; s <= numSteps; s++) {
+        const t = s / numSteps;
+        const px = oldX + moveX * t;
+        const py = oldY + moveY * t;
+        const pz = oldZ + moveZ * t;
+        if (this._pointInMobAABB(px, py, pz, mob, padding)) {
+          hit = true;
+          hitY = py;
+          // 将投射物位置回退到命中点
+          this.position.x = px;
+          this.position.y = py;
+          this.position.z = pz;
+          if (this.mesh) {
+            this.mesh.position.set(px, py, pz);
+          }
+          break;
+        }
+      }
 
-      if (dist < mob.width + 0.3) {
-        this.onEntityHit(mob);
+      if (hit) {
+        // 爆头判定：命中点在生物高度的上 25% 区域
+        const isHeadshot = hitY >= mob.position.y + mob.height * 0.75;
+        this.onEntityHit(mob, isHeadshot);
         this.hitEntities.add(mob.id);
         if (this.piercing <= 0) {
           this.dead = true;
@@ -1094,13 +1156,25 @@ export class Projectile {
     }
   }
 
-  onEntityHit(mob) {
+  onEntityHit(mob, isHeadshot = false) {
     if (this.onHitEntity) {
       this.onHitEntity(mob, this);
       return;
     }
 
     let damage = this.damage;
+    let isCritical = false;
+
+    // 暴击：15%概率造成2倍伤害（不包括爆头，爆头与暴击互斥）
+    if (!isHeadshot && Math.random() < 0.15) {
+      isCritical = true;
+      damage = Math.floor(damage * 2);
+    }
+
+    // 爆头加成：伤害 ×1.5
+    if (isHeadshot) {
+      damage = Math.floor(damage * 1.5);
+    }
 
     if (this.enchantments.power) {
       damage += this.enchantments.power * 0.5;
@@ -1121,10 +1195,11 @@ export class Projectile {
 
     mob.takeDamage(damage);
 
+    // 命中粒子：减少粒子数量以降低卡顿（仅1个粒子）
     if (this.game.effects) {
       this.game.effects.createBlockBreakParticles(
         Math.floor(this.position.x), Math.floor(this.position.y), Math.floor(this.position.z),
-        this._getTrailColor()
+        isCritical ? 0xff00ff : this._getTrailColor()
       );
     }
 
@@ -1132,9 +1207,9 @@ export class Projectile {
       this.game.effects.createExplosion(this.position.x, this.position.y, this.position.z, 4);
     }
 
-    // 狙击弹命中实体产生冲击波粒子
+    // 狙击弹命中实体产生冲击波粒子（减少为3个）
     if (this.type === PROJECTILE_TYPE.SNIPER_BULLET && this.game.effects) {
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < 3; i++) {
         this.game.effects.createBlockBreakParticles(
           Math.floor(this.position.x), Math.floor(this.position.y), Math.floor(this.position.z), 0x66ffaa
         );
@@ -1144,26 +1219,67 @@ export class Projectile {
     // 龙息炮命中实体：火焰爆炸 + 灼烧
     if (this.type === PROJECTILE_TYPE.DRAGON_FIRE) {
       this._dragonFireExplode(this.position.x, this.position.y, this.position.z);
-      mob._burnTimer = 4; // 灼烧 4 秒
+      mob._burnTimer = 5; // 灼烧 5 秒
     }
 
+    // 湮灭炮命中实体：引力漩涡爆炸（对范围内僵尸造成伤害）
+    if (this.type === PROJECTILE_TYPE.QUANTUM_ORB) {
+      if (this.game.effects) {
+        try {
+          this.game.effects.createQuantumVortex(this.position.x, this.position.y, this.position.z, 3, 5);
+        } catch (e) { /* 忽略 */ }
+      }
+      this._quantumVortexPull(this.position.x, this.position.y, this.position.z);
+    }
+
+    // 击退效果（尊重 knockbackImmune 属性）
     const dx = mob.position.x - this.position.x;
     const dz = mob.position.z - this.position.z;
     const len = Math.sqrt(dx * dx + dz * dz);
-    if (len > 0) {
+    if (len > 0 && !mob.knockbackImmune) {
       let knockback = 2;
-      if (this.type === PROJECTILE_TYPE.ROCKET) knockback = 8;
-      else if (this.type === PROJECTILE_TYPE.BULLET) knockback = 1;
-      else if (this.type === PROJECTILE_TYPE.GATLING_BULLET) knockback = 1.5;
-      else if (this.type === PROJECTILE_TYPE.SNIPER_BULLET) knockback = 5;
-      else if (this.type === PROJECTILE_TYPE.DRAGON_FIRE) knockback = 3;
+      let knockup = 3;
+      let stunTime = 0;
+      if (this.type === PROJECTILE_TYPE.ROCKET) { knockback = 8; knockup = 5; stunTime = 0.3; }
+      else if (this.type === PROJECTILE_TYPE.BULLET) { knockback = 4; knockup = 2.5; stunTime = 0.15; }
+      else if (this.type === PROJECTILE_TYPE.GATLING_BULLET) { knockback = 3; knockup = 2; stunTime = 0.1; }
+      else if (this.type === PROJECTILE_TYPE.SNIPER_BULLET) { knockback = 6; knockup = 4; stunTime = 0.4; }
+      else if (this.type === PROJECTILE_TYPE.DRAGON_FIRE) { knockback = 3; knockup = 3; stunTime = 0.2; }
+      // 爆头额外击退
+      if (isHeadshot) { knockback *= 1.5; stunTime += 0.1; }
       mob.velocity.x += (dx / len) * knockback;
       mob.velocity.z += (dz / len) * knockback;
-      mob.velocity.y = 3;
+      mob.velocity.y = knockup;
+      // 短暂眩晕：被击中的僵尸暂停移动和攻击
+      if (stunTime > 0) {
+        mob._stunTimer = Math.max(mob._stunTimer || 0, stunTime);
+      }
     }
 
     if (this.game.effects) {
-      this.game.effects.showDamageNumber(mob.position.x, mob.position.y + 1, mob.position.z, damage);
+      // 暴击用金色，爆头用红色，其他用白色
+      let dmgColor = '#ffffff';
+      if (isCritical) dmgColor = '#ff00ff';
+      else if (isHeadshot) dmgColor = '#ff4444';
+      this.game.effects.showDamageNumber(mob.position.x, mob.position.y + 1, mob.position.z, damage, dmgColor);
+      // 暴击额外特效：紫色火花（仅2个粒子）
+      if (isCritical && this.game.effects.createBlockBreakParticles) {
+        for (let i = 0; i < 2; i++) {
+          this.game.effects.createBlockBreakParticles(
+            Math.floor(mob.position.x), Math.floor(mob.position.y + mob.height * 0.8), Math.floor(mob.position.z),
+            0xff00ff
+          );
+        }
+      }
+      // 爆头额外特效（仅2个粒子）
+      else if (isHeadshot && this.game.effects.createBlockBreakParticles) {
+        for (let i = 0; i < 2; i++) {
+          this.game.effects.createBlockBreakParticles(
+            Math.floor(mob.position.x), Math.floor(mob.position.y + mob.height * 0.8), Math.floor(mob.position.z),
+            0xff4444
+          );
+        }
+      }
     }
   }
 
@@ -1309,8 +1425,8 @@ export class Projectile {
   // 龙息炮火焰爆炸：范围伤害 + 灼烧 + 粒子 + 地面残留火 + 点燃可燃方块（可蔓延）
   _dragonFireExplode(cx, cy, cz) {
     const explodeRadius = 3;
-    const damage = 8;
-    const burnDuration = 4;
+    const damage = 25;
+    const burnDuration = 5;
 
     // 火焰爆炸粒子
     if (this.game.effects) {
@@ -1489,7 +1605,7 @@ export class Projectile {
     if (!this.game.effects) return;
 
     const pullRadius = 6;
-    const damage = 12;
+    const damage = 30;
     const game = this.game;
 
     // 立即吸引并伤害附近实体
@@ -1529,7 +1645,7 @@ export class Projectile {
             mob.velocity.y += (dy / dist) * force * 0.3;
             mob.velocity.z += (dz / dist) * force;
             if (elapsed < 3) {
-              mob.takeDamage(3);
+              mob.takeDamage(8);
             }
           }
         }
@@ -1555,7 +1671,7 @@ export class Projectile {
             const dz = mob.position.z - cz;
             const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
             if (dist < 5) {
-              const dmg = Math.floor((1 - dist / 5) * 20);
+              const dmg = Math.floor((1 - dist / 5) * 50);
               if (dmg > 0) {
                 mob.takeDamage(dmg);
                 if (game.effects.showDamageNumber) {
@@ -1862,7 +1978,7 @@ export class RangedSystem {
     const dir = this.game.player.getLookDirection();
 
     const speed = 35;
-    const damage = 12;
+    const damage = 40;
     const maxLifetime = 20;
 
     const spawnX = eye.x + dir.x * 1.0;
@@ -1903,7 +2019,7 @@ export class RangedSystem {
     const dir = this.game.player.getLookDirection();
 
     const speed = 55;
-    const damage = 6;
+    const damage = 20;
     const maxLifetime = 8;
 
     const spawnX = eye.x + dir.x * 1.0;
@@ -1938,10 +2054,10 @@ export class RangedSystem {
     const dir = this.game.player.getLookDirection();
 
     const maxRange = 50;
-    const chainRange = 6;
+    const chainRange = 8;
     const maxChains = 4;
-    const initialDamage = 15;
-    const chainDamages = [10, 8, 5, 3];
+    const initialDamage = 40;
+    const chainDamages = [25, 20, 15, 10];
 
     // 射线检测：找第一个命中的实体或方块
     let hitPoint = null;

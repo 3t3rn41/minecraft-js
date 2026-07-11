@@ -32,6 +32,7 @@ import { MobileControls, isMobileDevice } from './mobile.js';
 import { SoundSystem } from './sound.js';
 import { PlayerModel } from './playermodel.js';
 import { HeldItemViewModel } from './helditem.js';
+import { AdventureMode } from './adventure.js';
 
 export class Game {
   constructor() {
@@ -54,6 +55,7 @@ export class Game {
       fog: true,
       fov: 75,
       showFPS: true,
+      maxFps: 60,
     };
 
     // 移动端性能优化：降低渲染距离和像素比
@@ -98,6 +100,7 @@ export class Game {
     this.mobile = null;
     this.isMobile = false;
     this.sound = null;
+    this.adventure = null;  // 冒险模式
     this.difficulty = 2; // 0=peaceful, 1=easy, 2=normal, 3=hard
     this.spawnPoint = { x: 0, y: 40, z: 0 };
     this.gamemode = GAMEMODE.SURVIVAL;
@@ -288,6 +291,12 @@ export class Game {
       this.achievements.onMultiplayerJoin();
     }
 
+    // 冒险模式初始化
+    if (gamemode === GAMEMODE.ADVENTURE) {
+      this.adventure = new AdventureMode(this);
+      this.adventure.init(loadSave);
+    }
+
     // 应用设置
     this.applySettings(this.settings);
 
@@ -444,10 +453,20 @@ export class Game {
 
     const now = performance.now();
     let dt = (now - this.lastTime) / 1000;
-    this.lastTime = now;
 
-    // 限制 dt 防止大跳跃
-    if (dt > 0.1) dt = 0.1;
+    // 帧率限制
+    const maxFps = this.settings.maxFps || 60;
+    const minFrameTime = 1000 / maxFps;
+    const elapsed = now - this.lastTime;
+
+    if (elapsed < minFrameTime) {
+      // 未达到目标帧间隔，等待剩余时间后重试
+      setTimeout(() => requestAnimationFrame(this.gameLoop), minFrameTime - elapsed);
+      return;
+    }
+
+    this.lastTime = now;
+    dt = dt > 0.1 ? 0.1 : dt;
 
     this.update(dt);
     this.render();
@@ -589,6 +608,11 @@ export class Game {
       this.multiplayer.update(dt);
     }
 
+    // 冒险模式更新
+    if (this.adventure) {
+      this.adventure.update(dt);
+    }
+
     // 加载/卸载区块
     this.updateChunks();
 
@@ -619,7 +643,14 @@ export class Game {
       if (!this.lastDeathPos) {
         this.lastDeathPos = { ...this.player.position };
       }
-      this.ui.showDeath();
+      if (this.gamemode === GAMEMODE.ADVENTURE && this.adventure) {
+        // 冒险模式：只触发一次死亡（_respawnTimer > 0 表示已触发）
+        if (this.adventure._respawnTimer <= 0) {
+          this.adventure.onLocalDeath();
+        }
+      } else {
+        this.ui.showDeath();
+      }
     }
 
     // 同步手持物品（第一人称3D视图 + 第三人称模型手中）
@@ -635,6 +666,7 @@ export class Game {
     if (this._uiUpdateCounter % 3 === 0) {
       this.ui.updateStatusBars();
       this.ui.updateInfo(this.fps, this.player.position, this.sky.getTimeString());
+      this.ui.updateRadar();
     }
 
     // 清除单次按键
@@ -837,6 +869,27 @@ export class Game {
       if (this.ui) this.ui.showToast('游戏已保存');
     }
 
+    // 冒险模式：商店(B) / 技能(N) / 每日任务(J)
+    if (this.adventure && this.adventure.ui) {
+      if (this.input.consumeKey('KeyB')) {
+        this.adventure.ui.toggleShop();
+      }
+      if (this.input.consumeKey('KeyN')) {
+        this.adventure.ui.toggleSkills();
+      }
+if (this.input.consumeKey('KeyJ')) {
+this.adventure.ui.toggleDaily();
+}
+if (this.input.consumeKey('KeyK')) {
+this.adventure.ui.toggleLeaderboard();
+}
+    }
+
+    // 开发者模式：按P键弹出密码框（仅冒险模式）
+    if (this.adventure && this.input.consumeKey('KeyP')) {
+      this.showDevPasswordDialog();
+    }
+
     // 移动端：单次点击攻击（挖掘释放时触发）
     if (!isHoldingRangedWeapon && this.isMobile && this.input.consumeLeftClick()) {
       this._attackAnimTimer = 0.3;
@@ -857,6 +910,78 @@ export class Game {
         this.farming.interactCrop(this.currentRaycastHit.x, this.currentRaycastHit.y, this.currentRaycastHit.z, item);
       }
     }
+  }
+
+  // ===== 开发者模式（隐藏功能）=====
+  showDevPasswordDialog() {
+    // 已解锁则不重复弹窗
+    if (this.adventure && this.adventure.devMode) {
+      if (this.ui) this.ui.showToast('开发者模式已激活 ✅', 2000);
+      return;
+    }
+
+    const overlay = document.getElementById('dev-password-overlay');
+    if (!overlay) return;
+
+    // 退出指针锁定以便输入
+    if (!this.isMobile) this.input.exitPointerLock();
+    overlay.classList.remove('hidden');
+
+    const input = document.getElementById('dev-password-input');
+    const error = document.getElementById('dev-password-error');
+    input.value = '';
+    error.style.display = 'none';
+    setTimeout(() => input.focus(), 50);
+
+    const confirmBtn = document.getElementById('dev-password-confirm');
+    const cancelBtn = document.getElementById('dev-password-cancel');
+
+    const closeDialog = () => {
+      overlay.classList.add('hidden');
+      confirmBtn.removeEventListener('click', onConfirm);
+      cancelBtn.removeEventListener('click', onCancel);
+      input.removeEventListener('keydown', onKeydown);
+      if (!this.isMobile) this.input.requestPointerLock();
+    };
+
+    const onConfirm = () => {
+      const password = input.value.trim();
+      if (password === '13245768') {
+        // 解锁开发者模式
+        this.adventure.devMode = true;
+        // 设置巨额金币
+        this.adventure.econ.teamGold[this.adventure.localPlayerId] = 9999999;
+        if (this.player) this.player.gold = 9999999;
+        if (this.adventure.ui) {
+          this.adventure.ui.updateGold(9999999);
+          this.adventure.ui.showToast('🔓 开发者模式已解锁！无限金币已激活', 3000);
+        }
+        closeDialog();
+      } else {
+        error.style.display = 'block';
+        input.value = '';
+        input.focus();
+      }
+    };
+
+    const onCancel = () => {
+      closeDialog();
+    };
+
+    const onKeydown = (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        onConfirm();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        closeDialog();
+      }
+      e.stopPropagation();
+    };
+
+    confirmBtn.addEventListener('click', onConfirm);
+    cancelBtn.addEventListener('click', onCancel);
+    input.addEventListener('keydown', onKeydown);
   }
 
   updateCamera(dt) {
@@ -2004,5 +2129,28 @@ useDragonBreath() {
       this.input.exitPointerLock();
     }
     input.focus();
+  }
+
+  // ===== 冒险模式钩子方法 =====
+
+  onGoldPickup(amount) {
+    if (this.adventure) {
+      const pid = (this.multiplayer && this.multiplayer.playerId) || 'local';
+      // 客户端：上报金币拾取给主机
+      if (this.adventure.isClient && this.multiplayer) {
+        this.multiplayer.sendAdvPickup(amount, 'pickup');
+        return;
+      }
+      this.adventure.econ.addGold(pid, amount, 'pickup');
+      // 金币拾取音效
+      if (this.sound) this.sound.goldCoin();
+    }
+  }
+
+  onMobKilled(mob, killerId) {
+    if (this.adventure) {
+      const pid = killerId || (this.multiplayer && this.multiplayer.playerId) || 'local';
+      this.adventure.onKill(pid, mob);
+    }
   }
 }

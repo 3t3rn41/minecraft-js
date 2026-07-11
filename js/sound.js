@@ -304,4 +304,55 @@ export class SoundSystem {
     this.sweep(400, 30, 0.3, 'sawtooth', 0.2);
     this.noise(0.2, 0.2, 200);
   }
+
+  // ===== 冒险模式音效 =====
+
+  // 僵尸低吼
+  zombieGroan() {
+    if (!this.enabled || !this.ctx) return;
+    this.sweep(80, 50, 0.6, 'sawtooth', 0.12);
+    this.noise(0.5, 0.06, 300);
+  }
+
+  // 僵尸死亡
+  zombieDeath() {
+    if (!this.enabled || !this.ctx) return;
+    this.sweep(200, 40, 0.4, 'sawtooth', 0.15);
+    this.noise(0.3, 0.1, 500);
+  }
+
+  // 波次开始提示音
+  waveStart() {
+    if (!this.enabled || !this.ctx) return;
+    // 三连升调号角
+    this.tone(440, 0.15, 'square', 0.15);
+    setTimeout(() => this.tone(554, 0.15, 'square', 0.15), 150);
+    setTimeout(() => this.tone(659, 0.3, 'square', 0.2), 300);
+  }
+
+  // 金币拾取
+  goldCoin() {
+    if (!this.enabled || !this.ctx) return;
+    this.tone(1200, 0.08, 'sine', 0.12);
+    setTimeout(() => this.tone(1600, 0.12, 'sine', 0.1), 60);
+  }
+
+  // Boss怒吼
+  bossRoar() {
+    if (!this.enabled || !this.ctx) return;
+    // 低频咆哮 + 噪声
+    this.sweep(120, 60, 1.0, 'sawtooth', 0.25);
+    this.noise(0.8, 0.15, 200);
+    setTimeout(() => {
+      this.sweep(100, 50, 0.6, 'sawtooth', 0.2);
+      this.noise(0.5, 0.12, 150);
+    }, 300);
+  }
+
+  // 空投提示
+  supplyDrop() {
+    if (!this.enabled || !this.ctx) return;
+    // 下降哨音
+    this.sweep(800, 200, 0.8, 'sine', 0.12);
+  }
 }

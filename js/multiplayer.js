@@ -5,8 +5,9 @@
 
 import * as THREE from 'three';
 import { BLOCK_DEFS } from './blocks.js';
-import { GAMEMODE_NAMES } from './gamemodes.js';
+import { GAMEMODE, GAMEMODE_NAMES } from './gamemodes.js';
 import { PlayerModel } from './playermodel.js';
+import { AdventureMode } from './adventure.js';
 
 export class Multiplayer {
   constructor(game) {
@@ -29,6 +30,13 @@ export class Multiplayer {
     // 时间同步
     this.timeSyncTimer = 0;
     this.timeSyncInterval = 5; // 每5秒同步一次时间
+
+    // 冒险模式状态同步
+    this.advStateSyncTimer = 0;
+    this.advStateSyncInterval = 0.05; // 20次/秒
+
+    // 防爆发校验：记录每个玩家上次击杀时间
+    this._advLastKillT = {};
   }
 
   // 初始化 PeerJS（动态加载）
@@ -37,7 +45,7 @@ export class Multiplayer {
 
     return new Promise((resolve, reject) => {
       const script = document.createElement('script');
-      script.src = 'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';
+      script.src = 'lib/peerjs.min.js';
       script.onload = () => resolve(window.Peer);
       script.onerror = () => reject(new Error('无法加载 PeerJS'));
       document.head.appendChild(script);
@@ -427,7 +435,17 @@ export class Multiplayer {
         }
         if (data.gamemode !== undefined) {
           // 主机指定的游戏模式（skipSync 避免重复广播）
-          this.game.setGamemode(data.gamemode, true);
+          // 冒险模式需要特殊处理：初始化 AdventureMode
+          if (data.gamemode === GAMEMODE.ADVENTURE && !this.game.adventure) {
+            this.game._adventureMapIndex = data.adventureMapIndex || 0;
+            this.game.adventure = new AdventureMode(this.game);
+            this.game.adventure.init(false);
+            // 设置游戏模式（初始化 AdventureMode 后再设置，确保 player 配置正确）
+            this.game.setGamemode(GAMEMODE.ADVENTURE, true);
+            console.log('[ADV-NET] 客户端初始化冒险模式, 地图索引:', this.game._adventureMapIndex);
+          } else {
+            this.game.setGamemode(data.gamemode, true);
+          }
         }
         if (data.difficulty !== undefined) {
           this.game.difficulty = data.difficulty;
@@ -502,6 +520,121 @@ export class Multiplayer {
           this.broadcast(data, conn.peer);
         }
         break;
+
+      // ===== 冒险模式协议 (10条 adv_) =====
+
+      case 'adv_state':
+        // host→所有：权威状态快照
+        if (this.game.adventure) {
+          this.game.adventure.applyHostState(data);
+        }
+        break;
+
+      case 'adv_spawn':
+        // host→所有：怪物生成同步
+        if (this.game.adventure && !this.isHost) {
+          this.game.mobs.spawnMob(data.x, data.y, data.z, data.mobType);
+          // 应用血量缩放（如果提供）
+          if (data.hpScale) {
+            const lastMob = this.game.mobs.mobs[this.game.mobs.mobs.length - 1];
+            if (lastMob) {
+              lastMob.maxHealth = Math.ceil(lastMob.maxHealth * data.hpScale);
+              lastMob.health = lastMob.maxHealth;
+            }
+          }
+        }
+        break;
+
+      case 'adv_kill':
+        // 任意→host：击杀上报（host校验防爆发）
+        if (this.isHost && this.game.adventure) {
+          const now = performance.now() / 1000;
+          const pid = data.playerId || conn.peer;
+          // 防爆发校验：同一玩家50ms内多次击杀忽略
+          if (this._advLastKillT[pid] && now - this._advLastKillT[pid] < 0.05) {
+            console.warn(`[ADV-NET] kill burst from ${pid}, ignored`);
+            break;
+          }
+          this._advLastKillT[pid] = now;
+          // 校验怪物是否存在
+          if (data.mobId !== undefined) {
+            const mob = this.game.mobs.mobs.find(m => m.id === data.mobId && !m.dead);
+            if (!mob) break; // 怪物不存在，忽略
+          }
+          // host 处理击杀
+          this.game.adventure.onClientKill(pid, data);
+        }
+        break;
+
+      case 'adv_pickup':
+        // 任意→host：拾取金币上报
+        if (this.isHost && this.game.adventure) {
+          const pid = data.playerId || conn.peer;
+          this.game.adventure.onClientPickup(pid, data.amount, data.reason || 'pickup');
+        }
+        break;
+
+      case 'adv_buy':
+        // 任意→host：购买请求
+        if (this.isHost && this.game.adventure) {
+          const pid = data.playerId || conn.peer;
+          const success = this.game.adventure.econ.buyItem(pid, data.itemId);
+          // 返回购买结果给请求者（包含主机抽取的英雄武器ID）
+          conn.send({
+            type: 'adv_buy_result',
+            playerId: pid,
+            itemId: data.itemId,
+            success: success,
+            gold: this.game.adventure.econ.getGold(pid),
+            heroWeaponId: success ? this.game.adventure.econ._lastHeroWeaponId : null,
+            heroAllOwned: !success && data.itemId === 'hero',
+          });
+        }
+        break;
+
+      case 'adv_buy_result':
+        // host→某：购买结果
+        if (this.game.adventure && !this.isHost) {
+          this.game.adventure.handleBuyResult(data);
+        }
+        break;
+
+      case 'adv_death':
+        // 任意→host：死亡通知（host判断团灭）
+        if (this.isHost && this.game.adventure) {
+          const pid = data.playerId || conn.peer;
+          this.game.adventure.onClientDeath(pid);
+        }
+        break;
+
+      case 'adv_event':
+        // host→所有：随机事件触发
+        if (this.game.adventure && !this.isHost) {
+          this.game.adventure.handleEvent(data.eventName, data.payload || {});
+        }
+        break;
+
+      case 'adv_grade':
+        // host→所有：结算数据
+        if (this.game.adventure) {
+          this.game.adventure.handleGradeData(data);
+        }
+        break;
+
+      case 'adv_revive':
+        // 双向：复活通知
+        if (this.game.adventure) {
+          if (this.isHost) {
+            // host 收到复活请求/通知
+            this.game.adventure.onClientRevive(data.reviverId || conn.peer, data.targetId);
+            // 转发给其他玩家
+            this.broadcast(data, conn.peer);
+          } else {
+            // 客户端收到复活通知
+            this.game.adventure.handleRevive(data);
+          }
+        }
+        break;
     }
   }
 
@@ -526,6 +659,10 @@ export class Multiplayer {
       gamemode: this.game.gamemode,
       difficulty: this.game.difficulty,
     };
+    // 冒险模式：同步地图索引
+    if (this.game.gamemode === GAMEMODE.ADVENTURE && this.game._adventureMapIndex !== undefined) {
+      data.adventureMapIndex = this.game._adventureMapIndex;
+    }
     // 同步红石拉杆状态
     if (this.game.redstone && this.game.redstone.leverStates.size > 0) {
       data.redstoneLevers = Array.from(this.game.redstone.leverStates.entries());
@@ -724,6 +861,15 @@ export class Multiplayer {
       }
     }
 
+    // 主机定期同步冒险模式状态（20次/秒）
+    if (this.isHost && this.game.adventure && this.game.adventure.active) {
+      this.advStateSyncTimer -= dt;
+      if (this.advStateSyncTimer <= 0) {
+        this.advStateSyncTimer = this.advStateSyncInterval;
+        this.sendAdvState();
+      }
+    }
+
     // 更新远程玩家网格位置和动画
     const now = Date.now();
     for (const [peerId, rp] of this.remotePlayers) {
@@ -912,6 +1058,80 @@ export class Multiplayer {
   sendPotionEffect(targetId, effectId, name, duration, level, color) {
     if (!this.isConnected) return;
     this.sendToAll({ type: 'potion_effect', targetId, effectId, name, duration, level, color });
+  }
+
+  // ===== 冒险模式发送方法 (10条 adv_) =====
+
+  // host→所有：权威状态快照
+  sendAdvState() {
+    if (!this.isConnected || !this.game.adventure) return;
+    const state = this.game.adventure.serializeState();
+    this.sendToAll({ type: 'adv_state', ...state });
+  }
+
+  // host→所有：怪物生成同步
+  sendAdvSpawn(mobType, x, y, z, hpScale = 1.0) {
+    if (!this.isConnected) return;
+    this.sendToAll({ type: 'adv_spawn', mobType, x, y, z, hpScale });
+  }
+
+  // 任意→host：击杀上报
+  sendAdvKill(mobId, mobType, flags = {}) {
+    if (!this.isConnected) return;
+    if (this.isHost) return; // host 自己处理，不需要发送
+    // 发送给 host（客户端只有一条到 host 的连接）
+    for (const conn of this.connections.values()) {
+      conn.send({ type: 'adv_kill', playerId: this.playerId, mobId, mobType, flags });
+      break;
+    }
+  }
+
+  // 任意→host：拾取金币上报
+  sendAdvPickup(amount, reason = 'pickup') {
+    if (!this.isConnected) return;
+    if (this.isHost) return; // host 自己处理
+    for (const conn of this.connections.values()) {
+      conn.send({ type: 'adv_pickup', playerId: this.playerId, amount, reason });
+      break;
+    }
+  }
+
+  // 任意→host：购买请求
+  sendAdvBuy(itemId) {
+    if (!this.isConnected) return;
+    if (this.isHost) return; // host 自己处理
+    for (const conn of this.connections.values()) {
+      conn.send({ type: 'adv_buy', playerId: this.playerId, itemId });
+      break;
+    }
+  }
+
+  // 任意→host：死亡通知
+  sendAdvDeath() {
+    if (!this.isConnected) return;
+    if (this.isHost) return; // host 自己处理
+    for (const conn of this.connections.values()) {
+      conn.send({ type: 'adv_death', playerId: this.playerId });
+      break;
+    }
+  }
+
+  // host→所有：随机事件触发
+  sendAdvEvent(eventName, payload = {}) {
+    if (!this.isConnected) return;
+    this.sendToAll({ type: 'adv_event', eventName, payload });
+  }
+
+  // host→所有：结算数据
+  sendAdvGrade(gradeData) {
+    if (!this.isConnected) return;
+    this.sendToAll({ type: 'adv_grade', ...gradeData });
+  }
+
+  // 双向：复活通知
+  sendAdvRevive(targetId) {
+    if (!this.isConnected) return;
+    this.sendToAll({ type: 'adv_revive', reviverId: this.playerId, targetId });
   }
 
   // 尝试攻击附近的远程玩家（PvP）

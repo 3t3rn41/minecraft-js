@@ -20,7 +20,7 @@ async function loadPeerJS() {
   if (window.Peer) return window.Peer;
   return new Promise((resolve, reject) => {
     const script = document.createElement('script');
-    script.src = 'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';
+    script.src = 'lib/peerjs.min.js';
     script.onload = () => resolve(window.Peer);
     script.onerror = () => reject(new Error('无法加载 PeerJS'));
     document.head.appendChild(script);

@@ -8,6 +8,7 @@ import { SaveManager } from './save.js';
 import { GAMEMODE, GAMEMODE_NAMES, GAMEMODE_ICONS } from './gamemodes.js';
 import { isMobileDevice } from './mobile.js';
 import { RoomDiscovery } from './roomDiscovery.js';
+import { ADVENTURE_MAPS } from './adventure.js';
 
 let game = null;
 let selectedGamemode = GAMEMODE.SURVIVAL;
@@ -57,7 +58,7 @@ async function loadPeerJS() {
   if (window.Peer) return window.Peer;
   return new Promise((resolve, reject) => {
     const script = document.createElement('script');
-    script.src = 'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';
+    script.src = 'lib/peerjs.min.js';
     script.onload = () => resolve(window.Peer);
     script.onerror = () => reject(new Error('无法加载 PeerJS'));
     document.head.appendChild(script);
@@ -130,7 +131,28 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   document.getElementById('gamemode-start-btn').addEventListener('click', () => {
-    startSinglePlayer(false, selectedGamemode);
+    if (selectedGamemode === GAMEMODE.ADVENTURE) {
+      // 冒险模式：显示地图选择界面
+      document.getElementById('gamemode-screen').classList.add('hidden');
+      document.getElementById('adventure-map-select').classList.remove('hidden');
+      renderAdventureMapSelect();
+    } else {
+      startSinglePlayer(false, selectedGamemode);
+    }
+  });
+
+  // 冒险模式地图选择 - 返回按钮
+  document.getElementById('adv-map-back-btn').addEventListener('click', () => {
+    document.getElementById('adventure-map-select').classList.add('hidden');
+    // 判断是从单人还是多人模式进入的，返回对应界面
+    const gmSelect = document.getElementById('mp-host-gamemode');
+    const hostGamemode = gmSelect ? parseInt(gmSelect.value) : -1;
+    if (hostGamemode === GAMEMODE.ADVENTURE && pendingPeer) {
+      // 从多人联机进入
+      document.getElementById('multiplayer-screen').classList.remove('hidden');
+    } else {
+      document.getElementById('gamemode-screen').classList.remove('hidden');
+    }
   });
 
   document.getElementById('gamemode-back-btn').addEventListener('click', () => {
@@ -199,6 +221,15 @@ document.addEventListener('DOMContentLoaded', () => {
   // ===== 主机进入游戏 =====
   document.getElementById('enter-host-game-btn').addEventListener('click', async () => {
     const btn = document.getElementById('enter-host-game-btn');
+    // 冒险模式：先选择地图
+    const gmSelect = document.getElementById('mp-host-gamemode');
+    const hostGamemode = gmSelect ? parseInt(gmSelect.value) : GAMEMODE.SURVIVAL;
+    if (hostGamemode === GAMEMODE.ADVENTURE) {
+      document.getElementById('multiplayer-screen').classList.add('hidden');
+      document.getElementById('adventure-map-select').classList.remove('hidden');
+      renderMultiplayerAdventureMapSelect();
+      return;
+    }
     btn.textContent = '正在进入...';
     btn.disabled = true;
     try {
@@ -421,18 +452,103 @@ function getSettingsFromUI() {
     fog: document.getElementById('set-fog').checked,
     fov: parseInt(document.getElementById('set-fov').value),
     showFPS: document.getElementById('set-show-fps').checked,
+    maxFps: parseInt(document.getElementById('set-max-fps') ? document.getElementById('set-max-fps').value : '60'),
   };
 }
 
 // ===== 启动单人游戏 =====
-async function startSinglePlayer(loadSave, gamemode = GAMEMODE.SURVIVAL) {
+async function startSinglePlayer(loadSave, gamemode = GAMEMODE.SURVIVAL, adventureMapIndex = 0) {
   document.getElementById('gamemode-screen').classList.add('hidden');
+  document.getElementById('adventure-map-select').classList.add('hidden');
   document.getElementById('game-container').classList.remove('hidden');
   document.getElementById('loading-overlay').classList.remove('hidden');
 
   game = new Game();
   game.settings = getSettingsFromUI();
+  game._adventureMapIndex = adventureMapIndex;
   await game.init(loadSave, null, gamemode);
+}
+
+// ===== 冒险模式地图选择渲染（单人） =====
+function renderAdventureMapSelect() {
+  const grid = document.getElementById('adv-map-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+  // 清理多人模式标记
+  grid.dataset.multiplayer = '';
+
+  const mapIcons = ['🏙️', '❄️', '💎', '🌑'];
+  const mapDescriptions = [
+    '废弃城市废墟，残垣断壁间潜伏着尸潮。平坦地形适合新手。',
+    '冰封实验室，极寒环境下寒冰僵尸横行。小心冰面打滑！',
+    '水晶矿洞深处，崎岖山地中水晶守卫蓄势待发。',
+    '暗影宫殿，沙漠中的古老陵墓，僵尸君主的最终巢穴。',
+  ];
+
+  for (let i = 0; i < ADVENTURE_MAPS.length; i++) {
+    const map = ADVENTURE_MAPS[i];
+    const card = document.createElement('div');
+    card.className = 'adv-map-card';
+    card.innerHTML = `
+      <div class="adv-map-icon">${mapIcons[i] || '🗺️'}</div>
+      <div class="adv-map-name">${map.nameZh}</div>
+      <div class="adv-map-desc">${mapDescriptions[i] || ''}</div>
+      <div class="adv-map-info">
+        <span>🌊 ${map.waveCount} 波</span>
+        <span>${map.theme.biome === 'snow' ? '❄️ 雪地' : map.theme.biome === 'desert' ? '🏜️ 沙漠' : map.theme.biome === 'mountains' ? '⛰️ 山地' : '🌿 平原'}</span>
+      </div>
+      <button class="menu-btn primary adv-map-start-btn">进入地图</button>
+    `;
+    card.querySelector('.adv-map-start-btn').addEventListener('click', () => {
+      startSinglePlayer(false, GAMEMODE.ADVENTURE, i);
+    });
+    grid.appendChild(card);
+  }
+}
+
+// ===== 冒险模式地图选择渲染（多人联机主机） =====
+function renderMultiplayerAdventureMapSelect() {
+  const grid = document.getElementById('adv-map-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+  grid.dataset.multiplayer = 'host';
+
+  const mapIcons = ['🏙️', '❄️', '💎', '🌑'];
+  const mapDescriptions = [
+    '废弃城市废墟，残垣断壁间潜伏着尸潮。平坦地形适合新手。',
+    '冰封实验室，极寒环境下寒冰僵尸横行。小心冰面打滑！',
+    '水晶矿洞深处，崎岖山地中水晶守卫蓄势待发。',
+    '暗影宫殿，沙漠中的古老陵墓，僵尸君主的最终巢穴。',
+  ];
+
+  for (let i = 0; i < ADVENTURE_MAPS.length; i++) {
+    const map = ADVENTURE_MAPS[i];
+    const card = document.createElement('div');
+    card.className = 'adv-map-card';
+    card.innerHTML = `
+      <div class="adv-map-icon">${mapIcons[i] || '🗺️'}</div>
+      <div class="adv-map-name">${map.nameZh}</div>
+      <div class="adv-map-desc">${mapDescriptions[i] || ''}</div>
+      <div class="adv-map-info">
+        <span>🌊 ${map.waveCount} 波</span>
+        <span>${map.theme.biome === 'snow' ? '❄️ 雪地' : map.theme.biome === 'desert' ? '🏜️ 沙漠' : map.theme.biome === 'mountains' ? '⛰️ 山地' : '🌿 平原'}</span>
+      </div>
+      <button class="menu-btn primary adv-map-start-btn">进入地图</button>
+    `;
+    card.querySelector('.adv-map-start-btn').addEventListener('click', async () => {
+      const enterBtn = document.getElementById('enter-host-game-btn');
+      enterBtn.textContent = '正在进入...';
+      enterBtn.disabled = true;
+      try {
+        await enterMultiplayerHostGame(i);
+      } catch (e) {
+        enterBtn.textContent = '进入游戏';
+        enterBtn.disabled = false;
+        alert('进入游戏失败: ' + e.message);
+      }
+    });
+    grid.appendChild(card);
+  }
 }
 
 // ===== 多人联机 - 主机阶段1：创建房间（仅生成ID） =====
@@ -498,8 +614,10 @@ async function createRoom() {
 }
 
 // ===== 多人联机 - 主机阶段2：进入游戏 =====
-async function enterMultiplayerHostGame() {
+// adventureMapIndex: 冒险模式选定的地图索引（可选）
+async function enterMultiplayerHostGame(adventureMapIndex = 0) {
   document.getElementById('multiplayer-screen').classList.add('hidden');
+  document.getElementById('adventure-map-select').classList.add('hidden');
   document.getElementById('game-container').classList.remove('hidden');
   document.getElementById('loading-overlay').classList.remove('hidden');
 
@@ -510,6 +628,7 @@ async function enterMultiplayerHostGame() {
   game = new Game();
   game.settings = getSettingsFromUI();
   game.roomDiscovery = roomDiscovery; // 传递给游戏，用于人数更新和退出时清理
+  game._adventureMapIndex = adventureMapIndex;
   await game.init(false, 'multiplayer', hostGamemode);
 
   // 使用已有的 Peer 连接和待处理的客户端连接
@@ -563,6 +682,8 @@ async function enterMultiplayerClientGame() {
   game.settings = getSettingsFromUI();
   game.roomDiscovery = roomDiscovery;
   game._isMultiplayerClient = true; // 标记为客户端，跳过区块生成直到收到主机种子
+  // 客户端以 SURVIVAL 模式初始化，收到主机 world_state 后会切换到正确模式
+  // 如果主机是冒险模式，会在 world_state 处理中初始化 AdventureMode
   await game.init(false, 'multiplayer', GAMEMODE.SURVIVAL);
 
   // 使用已有的 Peer 连接
@@ -605,3 +726,25 @@ window.startMinigame = async function(minigameType) {
     }
   }, 500);
 };
+
+// ===== 冒险模式 URL 快捷入口 =====
+// ?adventure=1 直接进入冒险模式（支持 ?wave=N & ?gold=N & ?debug=1）
+(async function checkAdventureParam() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('adventure') === '1') {
+    console.log('[ADV] URL param adventure=1 detected, auto-starting...');
+    // 等待 DOM 完全加载
+    if (document.readyState === 'loading') {
+      await new Promise(r => document.addEventListener('DOMContentLoaded', r));
+    }
+    // 直接启动冒险模式
+    document.getElementById('splash-screen')?.classList.add('hidden');
+    document.getElementById('gamemode-screen')?.classList.add('hidden');
+    document.getElementById('game-container')?.classList.remove('hidden');
+    document.getElementById('loading-overlay')?.classList.remove('hidden');
+
+    game = new Game();
+    game.settings = getSettingsFromUI();
+    await game.init(false, null, GAMEMODE.ADVENTURE);
+  }
+})();

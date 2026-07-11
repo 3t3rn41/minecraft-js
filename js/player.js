@@ -66,9 +66,20 @@ export class Player {
     // 音效系统
     this.sound = null;
 
+    // ===== 冒险模式字段 =====
+    this.gold = 0;
+    this.skills = this.loadAdventureSkills();
+    this.skillPoints = 0;
+    this.applySlowSource = null; // 减速光环来源（WinterZombie）
+    this._slowTimer = 0; // 减速持续计时器
+
     // 背包系统
     this.inventory = new Array(36).fill(null); // 27 背包 + 9 快捷栏
     this.hotbarIndex = 0;
+
+    // 爬坡缓冲：逻辑位置已升高，但视觉位置平滑追赶
+    this._stepUpVisualOffset = 0; // 当前视觉偏移（负值=视觉低于逻辑）
+    this._stepUpTargetOffset = 0; // 目标偏移
 
     // 初始物品
     this.giveStarterItems();
@@ -171,11 +182,11 @@ export class Player {
     return true;
   }
 
-  // 获取眼睛位置
+  // 获取眼睛位置（视觉位置受爬坡缓冲影响）
   getEyePosition() {
     return {
       x: this.position.x,
-      y: this.position.y + PLAYER_EYE,
+      y: this.position.y + PLAYER_EYE + this._stepUpVisualOffset,
       z: this.position.z,
     };
   }
@@ -292,9 +303,35 @@ export class Player {
       this._pvpInvulnTimer -= dt;
     }
 
+    // 冒险模式：减速光环计时
+    if (this._slowTimer > 0) {
+      this._slowTimer -= dt;
+      if (this._slowTimer <= 0) {
+        this.applySlowSource = null;
+      }
+    }
+
+    // 冒险模式：生命回复（技能 regen）
+    if (this.gamemode === GAMEMODE.ADVENTURE && this.getSkillBonus('regenPerSec') > 0 && this.health < this.maxHealth && !this.dead) {
+      this._regenAccum = (this._regenAccum || 0) + this.getSkillBonus('regenPerSec') * dt;
+      if (this._regenAccum >= 1) {
+        this.heal(Math.floor(this._regenAccum));
+        this._regenAccum -= Math.floor(this._regenAccum);
+      }
+    }
+
     // 防止掉出世界
     if (this.position.y < -10) {
       this.takeDamage(20);
+    }
+
+    // 爬坡视觉缓冲：平滑追赶逻辑位置
+    if (this._stepUpVisualOffset !== 0) {
+      // 每帧追赶 20% 的差距，约0.15秒内完成
+      this._stepUpVisualOffset += (this._stepUpTargetOffset - this._stepUpVisualOffset) * Math.min(1, dt * 12);
+      if (Math.abs(this._stepUpVisualOffset) < 0.01) {
+        this._stepUpVisualOffset = 0;
+      }
     }
 
     this.needsSync = true;
@@ -386,17 +423,27 @@ export class Player {
       this.position[axis] = newPos[axis];
     } else {
       // 自动爬坡：水平移动被阻挡时，尝试向上跨1格
-      if (axis !== 'y' && this.onGround && !this.sneaking && !this.flying) {
+      // 水中也允许爬坡，以便玩家从水中上岸
+      const inWater = this.isInWater();
+      if (axis !== 'y' && !this.sneaking && !this.flying && (this.onGround || inWater)) {
+        // 水中使用更大的步高（1.25），以应对浮力导致的非整数Y坐标
+        const stepHeight = inWater ? 1.25 : 1.0;
         const stepUpPos = { ...this.position };
-        stepUpPos.y = this.position.y + 1.0;
+        stepUpPos.y = this.position.y + stepHeight;
         stepUpPos[axis] += amount;
         // 检查升高后前方是否有空间（含头顶空间）
         if (!this.checkCollision(stepUpPos)) {
+          // 记录爬坡前的Y，用于视觉缓冲
+          const oldY = this.position.y;
           this.position.y = stepUpPos.y;
           this.position[axis] = newPos[axis];
           this.onGround = false; // 防止同一帧双重爬坡
           // 重置掉落追踪，防止自动爬坡触发掉落伤害
           this.fallStartY = null;
+          // 视觉缓冲：将偏移量设为升高前的高度差，让相机平滑追赶
+          const heightDiff = this.position.y - oldY;
+          this._stepUpTargetOffset = 0;
+          this._stepUpVisualOffset = -heightDiff; // 视觉先留在原位
           return;
         }
       }
@@ -433,6 +480,10 @@ export class Player {
     // PvP 伤害冷却（仅对玩家攻击生效，防止瞬间被连击致死）
     if (source === 'pvp' && this._pvpInvulnTimer && this._pvpInvulnTimer > 0) return;
     if (source === 'pvp') this._pvpInvulnTimer = 0.5;
+    // 冒险模式：技能减伤
+    if (this.gamemode === GAMEMODE.ADVENTURE) {
+      amount *= (1 - this.getSkillBonus('dmgReduction'));
+    }
     // 护甲减伤
     const armor = this.getArmorValue();
     const reducedDamage = Math.max(1, amount - armor * 0.5);
@@ -612,6 +663,71 @@ export class Player {
     this.dead = false;
     this.fallStartY = null;
     this.flying = false;
+  }
+
+  // ===== 冒险模式：技能系统 =====
+
+  // 从 localStorage 读取冒险技能
+  loadAdventureSkills() {
+    const defaultSkills = {
+      damage: 0, atkSpeed: 0, critical: 0,
+      vitality: 0, armor: 0, regen: 0, dmgReduc: 0,
+      speed: 0, goldBonus: 0, reviveSpd: 0, mechanic: 0, scavenger: 0, medic: 0,
+    };
+    try {
+      const pid = this._advPid || 'local';
+      const data = localStorage.getItem(`adventure_${pid}_skills`);
+      if (data) return { ...defaultSkills, ...JSON.parse(data) };
+    } catch (e) {}
+    return defaultSkills;
+  }
+
+  // 保存技能到 localStorage
+  saveAdventureSkills() {
+    try {
+      const pid = this._advPid || 'local';
+      localStorage.setItem(`adventure_${pid}_skills`, JSON.stringify(this.skills));
+    } catch (e) {}
+  }
+
+  // 获取技能加成
+  getSkillBonus(stat) {
+    const s = this.skills || {};
+    const tbl = {
+      maxHealth:   20 + (s.vitality || 0) * 5,
+      dmgMul:      1 + (s.damage || 0) * 0.1,
+      atkSpeedMul: 1 + (s.atkSpeed || 0) * 0.1,
+      critChance:  (s.critical || 0) * 0.05,
+      dmgReduction:(s.armor || 0) * 0.05,
+      regenPerSec: (s.regen || 0) * 2,
+      speedMul:    1 + (s.speed || 0) * 0.05,
+      goldMul:     1 + (s.goldBonus || 0) * 0.15,
+      reviveMul:   1 + (s.reviveSpd || 0) * 0.2,
+    };
+    return tbl[stat] !== undefined ? tbl[stat] : 0;
+  }
+
+  // 应用减速光环
+  applySlow(source, duration = 1) {
+    this.applySlowSource = source;
+    this._slowTimer = duration;
+  }
+
+  // 升级技能
+  upgradeSkill(skillName) {
+    if (this.skillPoints <= 0) return false;
+    const maxLevel = 5;
+    if (!this.skills[skillName] && this.skills[skillName] !== 0) return false;
+    if (this.skills[skillName] >= maxLevel) return false;
+    this.skills[skillName]++;
+    this.skillPoints--;
+    this.saveAdventureSkills();
+    // 如果升级了 vitality，增加最大血量
+    if (skillName === 'vitality') {
+      this.maxHealth = this.getSkillBonus('maxHealth');
+      this.health = Math.min(this.health + 5, this.maxHealth);
+    }
+    return true;
   }
 
   // 序列化（用于存档和多人同步）

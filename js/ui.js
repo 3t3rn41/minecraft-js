@@ -967,6 +967,7 @@ export class UI {
     const sf2 = document.getElementById('set-fog-2');
     const sfov2 = document.getElementById('set-fov-2');
     const sfps2 = document.getElementById('set-show-fps-2');
+    const sfpsMax2 = document.getElementById('set-max-fps-2');
 
     ss2.addEventListener('input', () => {
       document.getElementById('sensitivity-val-2').textContent = ss2.value;
@@ -981,6 +982,7 @@ export class UI {
     sf2.addEventListener('change', () => this.applySettings());
     sfov2.addEventListener('change', () => this.applySettings());
     sfps2.addEventListener('change', () => this.applySettings());
+    if (sfpsMax2) sfpsMax2.addEventListener('change', () => this.applySettings());
   }
 
   syncSettingsToPause() {
@@ -990,6 +992,8 @@ export class UI {
     document.getElementById('set-fog-2').checked = settings.fog;
     document.getElementById('set-fov-2').value = settings.fov;
     document.getElementById('set-show-fps-2').checked = settings.showFPS;
+    const fpsSelect2 = document.getElementById('set-max-fps-2');
+    if (fpsSelect2) fpsSelect2.value = settings.maxFps || 60;
     document.getElementById('sensitivity-val-2').textContent = settings.sensitivity;
     document.getElementById('fov-val-2').textContent = settings.fov;
   }
@@ -1001,6 +1005,7 @@ export class UI {
       fog: document.getElementById('set-fog').checked,
       fov: parseInt(document.getElementById('set-fov').value),
       showFPS: document.getElementById('set-show-fps').checked,
+      maxFps: parseInt(document.getElementById('set-max-fps') ? document.getElementById('set-max-fps').value : '60'),
     };
   }
 
@@ -1011,6 +1016,7 @@ export class UI {
       fog: document.getElementById('set-fog-2').checked,
       fov: parseInt(document.getElementById('set-fov-2').value),
       showFPS: document.getElementById('set-show-fps-2').checked,
+      maxFps: parseInt(document.getElementById('set-max-fps-2') ? document.getElementById('set-max-fps-2').value : '60'),
     };
     this.game.applySettings(settings);
   }
@@ -1073,6 +1079,144 @@ export class UI {
         sb.classList.add('hidden');
       }
     }
+  }
+
+  // ===== 雷达地图 =====
+
+  showRadar() {
+    const container = document.getElementById('radar-container');
+    if (container) container.classList.remove('hidden');
+    const gc = document.getElementById('game-container');
+    if (gc) gc.classList.add('radar-active');
+  }
+
+  hideRadar() {
+    const container = document.getElementById('radar-container');
+    if (container) container.classList.add('hidden');
+    const gc = document.getElementById('game-container');
+    if (gc) gc.classList.remove('radar-active');
+  }
+
+  updateRadar() {
+    const canvas = document.getElementById('radar-canvas');
+    if (!canvas) return;
+    const container = document.getElementById('radar-container');
+    if (!container || container.classList.contains('hidden')) return;
+
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width;
+    const h = canvas.height;
+    const cx = w / 2;
+    const cy = h / 2;
+    const radius = w / 2 - 4;
+
+    // 清空
+    ctx.clearRect(0, 0, w, h);
+
+    // 圆形裁剪
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.clip();
+
+    // 背景
+    ctx.fillStyle = 'rgba(15, 25, 20, 0.5)';
+    ctx.fillRect(0, 0, w, h);
+
+    // 同心圆刻度
+    ctx.strokeStyle = 'rgba(0, 255, 100, 0.15)';
+    ctx.lineWidth = 1;
+    for (let r = radius / 3; r <= radius; r += radius / 3) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // 十字线
+    ctx.strokeStyle = 'rgba(0, 255, 100, 0.1)';
+    ctx.beginPath();
+    ctx.moveTo(cx, 0); ctx.lineTo(cx, h);
+    ctx.moveTo(0, cy); ctx.lineTo(w, cy);
+    ctx.stroke();
+
+    // 玩家朝向
+    const yaw = this.game.player.yaw || 0;
+    // 玩家前方向量（世界坐标 xz）
+    const fwdX = -Math.sin(yaw);
+    const fwdZ = -Math.cos(yaw);
+    // 玩家右方向量
+    const rightX = Math.cos(yaw);
+    const rightZ = -Math.sin(yaw);
+
+    // 雷达探测范围（格）
+    const radarRange = 50;
+
+    // 绘制附近敌对生物
+    if (this.game.mobs && this.game.mobs.mobs) {
+      const px = this.game.player.position.x;
+      const pz = this.game.player.position.z;
+
+      for (const mob of this.game.mobs.mobs) {
+        if (mob.dead || mob.dying) continue;
+        // 只显示敌对生物
+        const hostileTypes = ['zombie', 'fast_z', 'crawler', 'brute', 'bomber',
+          'summoner', 'winter_z', 'creeper', 'skeleton'];
+        if (!hostileTypes.includes(mob.type)) continue;
+
+        const dx = mob.position.x - px;
+        const dz = mob.position.z - pz;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+
+        if (dist > radarRange) continue;
+
+        // 使用前向/右向向量投影，将世界坐标转为雷达坐标
+        const forwardComp = dx * fwdX + dz * fwdZ; // 前方分量
+        const rightComp = dx * rightX + dz * rightZ; // 右方分量
+
+        const scale = radius / radarRange;
+        const rx = cx + rightComp * scale;
+        const ry = cy - forwardComp * scale; // 屏幕Y向下，前方为上方
+
+        // 根据距离调整红点大小
+        const dotSize = dist < 10 ? 3.5 : dist < 25 ? 3 : 2.5;
+
+        ctx.fillStyle = '#ff3333';
+        ctx.beginPath();
+        ctx.arc(rx, ry, dotSize, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 近距离僵尸加光晕
+        if (dist < 15) {
+          ctx.fillStyle = 'rgba(255, 50, 50, 0.3)';
+          ctx.beginPath();
+          ctx.arc(rx, ry, dotSize + 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+
+    ctx.restore();
+
+    // 圆形边框
+    ctx.strokeStyle = 'rgba(0, 255, 100, 0.3)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // 玩家位置（中心，画在最上层）
+    ctx.fillStyle = '#00ff88';
+    ctx.beginPath();
+    ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 玩家朝向指示线（指向上方=前方）
+    ctx.strokeStyle = '#00ff88';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx, cy - 10);
+    ctx.stroke();
   }
 
   isAnyMenuOpen() {

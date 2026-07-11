@@ -5,3 +5,5 @@ node_modules/
 npm-debug.log*
 .catpaw/
 context.txt
+prompt.txt
+prompt.txt.tmp

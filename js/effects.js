@@ -529,6 +529,39 @@ export class EffectsManager {
         continue;
       }
 
+      // 信标光柱：仅淡出闪烁，不更新顶点位置
+      if (p.isBeacon) {
+        const t = p.life / p.maxLife;
+        const flicker = 0.1 + Math.sin(p.life * 5) * 0.05;
+        p.mesh.material.opacity = flicker * (1 - t * 0.5);
+        if (p.life >= p.maxLife) {
+          this.scene.remove(p.mesh);
+          p.mesh.geometry.dispose();
+          p.mesh.material.dispose();
+          this.particles.splice(i, 1);
+        }
+        continue;
+      }
+
+      // 空投尾焰：下落 + 淡出
+      if (p.isAirdrop) {
+        const positions = p.mesh.geometry.attributes.position.array;
+        for (let j = 0; j < p.velocities.length; j++) {
+          positions[j * 3] += p.velocities[j].x * dt;
+          positions[j * 3 + 1] += p.velocities[j].y * dt;
+          positions[j * 3 + 2] += p.velocities[j].z * dt;
+        }
+        p.mesh.geometry.attributes.position.needsUpdate = true;
+        p.mesh.material.opacity = 0.8 * (1 - p.life / p.maxLife);
+        if (p.life >= p.maxLife) {
+          this.scene.remove(p.mesh);
+          p.mesh.geometry.dispose();
+          p.mesh.material.dispose();
+          this.particles.splice(i, 1);
+        }
+        continue;
+      }
+
       // 残留电场：粒子轨道运动 + 闪烁
       if (p.isElectricField) {
         const positions = p.mesh.geometry.attributes.position.array;
@@ -1180,6 +1213,254 @@ export class EffectsManager {
       velocities,
       life: 0,
       maxLife: 0.6,
+      gravity: false,
+    });
+  }
+
+  // ===== 冒险模式：空投补给 =====
+  // groundY: 地面 Y 坐标
+  spawnAirdrop(x, groundY, z) {
+    // 尾焰粒子从空中下落
+    const dropY = groundY + 20;
+    const targetY = groundY;
+    // 创建下落动画粒子（橙色尾焰）
+    const count = 30;
+    const geom = new THREE.BufferGeometry();
+    const positions = new Float32Array(count * 3);
+    const velocities = [];
+    const colors = new Float32Array(count * 3);
+
+    for (let i = 0; i < count; i++) {
+      positions[i * 3] = x + (Math.random() - 0.5) * 1.5;
+      positions[i * 3 + 1] = dropY + Math.random() * 3;
+      positions[i * 3 + 2] = z + (Math.random() - 0.5) * 1.5;
+      velocities.push({
+        x: (Math.random() - 0.5) * 0.5,
+        y: -2 - Math.random() * 2,
+        z: (Math.random() - 0.5) * 0.5,
+      });
+      colors[i * 3] = 1.0;
+      colors[i * 3 + 1] = 0.5 + Math.random() * 0.3;
+      colors[i * 3 + 2] = 0.1;
+    }
+
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    const mat = new THREE.PointsMaterial({
+      size: 0.3,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.8,
+      fog: false,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+
+    const points = new THREE.Points(geom, mat);
+    this.scene.add(points);
+
+    this.particles.push({
+      mesh: points,
+      velocities,
+      life: 0,
+      maxLife: 2.0,
+      gravity: false,
+      isAirdrop: true,
+    });
+
+    // 信标光柱（落地后发光）
+    const beaconGeom = new THREE.CylinderGeometry(0.1, 0.5, 30, 8);
+    const beaconMat = new THREE.MeshBasicMaterial({
+      color: 0x00ff00,
+      transparent: true,
+      opacity: 0.15,
+      fog: false,
+      depthWrite: false,
+    });
+    const beacon = new THREE.Mesh(beaconGeom, beaconMat);
+    beacon.position.set(x, targetY + 15, z);
+    this.scene.add(beacon);
+
+    this.particles.push({
+      mesh: beacon,
+      velocities: [],
+      life: 0,
+      maxLife: 30, // 信标持续30秒
+      gravity: false,
+      isBeacon: true,
+    });
+  }
+
+  // ===== 冒险模式：补给爆炸（非破坏型白色爆闪）=====
+  spawnSupplyExplosion(x, y, z) {
+    const count = 40;
+    const geom = new THREE.BufferGeometry();
+    const positions = new Float32Array(count * 3);
+    const velocities = [];
+    const colors = new Float32Array(count * 3);
+
+    for (let i = 0; i < count; i++) {
+      positions[i * 3] = x;
+      positions[i * 3 + 1] = y;
+      positions[i * 3 + 2] = z;
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 3 + Math.random() * 5;
+      const vy = 2 + Math.random() * 4;
+      velocities.push({
+        x: Math.cos(angle) * speed,
+        y: vy,
+        z: Math.sin(angle) * speed,
+      });
+      colors[i * 3] = 1.0;
+      colors[i * 3 + 1] = 1.0;
+      colors[i * 3 + 2] = 1.0;
+    }
+
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    const mat = new THREE.PointsMaterial({
+      size: 0.4,
+      vertexColors: true,
+      transparent: true,
+      opacity: 1.0,
+      fog: false,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+
+    const points = new THREE.Points(geom, mat);
+    this.scene.add(points);
+
+    this.particles.push({
+      mesh: points,
+      velocities,
+      life: 0,
+      maxLife: 1.0,
+      gravity: true,
+    });
+
+    // 中心闪光
+    this.createFlash(x, y, z, 2);
+  }
+
+  // ===== 冒险模式：胜利烟花 =====
+  spawnVictoryFirework(x, y, z) {
+    // 多波次彩色烟花
+    const fireworkColors = [
+      [1.0, 0.2, 0.2], // 红
+      [1.0, 0.8, 0.0], // 金
+      [0.2, 1.0, 0.2], // 绿
+      [0.2, 0.4, 1.0], // 蓝
+      [1.0, 0.2, 1.0], // 紫
+      [0.0, 1.0, 1.0], // 青
+    ];
+
+    for (let burst = 0; burst < 3; burst++) {
+      setTimeout(() => {
+        const bx = x + (Math.random() - 0.5) * 8;
+        const by = y + 3 + Math.random() * 4;
+        const bz = z + (Math.random() - 0.5) * 8;
+        const color = fireworkColors[Math.floor(Math.random() * fireworkColors.length)];
+        const count = 50;
+
+        const geom = new THREE.BufferGeometry();
+        const positions = new Float32Array(count * 3);
+        const velocities = [];
+        const colors = new Float32Array(count * 3);
+
+        for (let i = 0; i < count; i++) {
+          positions[i * 3] = bx;
+          positions[i * 3 + 1] = by;
+          positions[i * 3 + 2] = bz;
+          const theta = Math.random() * Math.PI * 2;
+          const phi = Math.acos(Math.random() * 2 - 1);
+          const speed = 4 + Math.random() * 4;
+          velocities.push({
+            x: Math.sin(phi) * Math.cos(theta) * speed,
+            y: Math.cos(phi) * speed,
+            z: Math.sin(phi) * Math.sin(theta) * speed,
+          });
+          colors[i * 3] = color[0];
+          colors[i * 3 + 1] = color[1];
+          colors[i * 3 + 2] = color[2];
+        }
+
+        geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+        const mat = new THREE.PointsMaterial({
+          size: 0.35,
+          vertexColors: true,
+          transparent: true,
+          opacity: 1.0,
+          fog: false,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+        });
+
+        const points = new THREE.Points(geom, mat);
+        this.scene.add(points);
+
+        this.particles.push({
+          mesh: points,
+          velocities,
+          life: 0,
+          maxLife: 2.0,
+          gravity: true,
+          isFirework: true,
+        });
+
+        // 中心闪光
+        this.createFlash(bx, by, bz, 2);
+      }, burst * 400);
+    }
+  }
+
+  // ===== 冒险模式：治疗特效 =====
+  createHealingEffect(pos) {
+    const count = 30;
+    const geom = new THREE.BufferGeometry();
+    const positions = new Float32Array(count * 3);
+    const velocities = [];
+    const colors = new Float32Array(count * 3);
+
+    for (let i = 0; i < count; i++) {
+      positions[i * 3] = pos.x + (Math.random() - 0.5) * 1.5;
+      positions[i * 3 + 1] = pos.y + Math.random() * 0.5;
+      positions[i * 3 + 2] = pos.z + (Math.random() - 0.5) * 1.5;
+      velocities.push({
+        x: (Math.random() - 0.5) * 0.5,
+        y: 1 + Math.random() * 2,
+        z: (Math.random() - 0.5) * 0.5,
+      });
+      colors[i * 3] = 0.2;
+      colors[i * 3 + 1] = 1.0;
+      colors[i * 3 + 2] = 0.3;
+    }
+
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    const mat = new THREE.PointsMaterial({
+      size: 0.3,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.8,
+      fog: false,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+
+    const points = new THREE.Points(geom, mat);
+    this.scene.add(points);
+
+    this.particles.push({
+      mesh: points,
+      velocities,
+      life: 0,
+      maxLife: 1.5,
       gravity: false,
     });
   }

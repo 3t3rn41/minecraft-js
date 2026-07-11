@@ -10,6 +10,7 @@ export const GAMEMODE = {
   SPECTATOR: 3,
   SKYBLOCK: 4,
   EXPERIENCE: 5,
+  ADVENTURE: 6,
 };
 
 export const GAMEMODE_NAMES = {
@@ -19,6 +20,7 @@ export const GAMEMODE_NAMES = {
   [GAMEMODE.SPECTATOR]: '旁观模式',
   [GAMEMODE.SKYBLOCK]: '空岛模式',
   [GAMEMODE.EXPERIENCE]: '体验模式',
+  [GAMEMODE.ADVENTURE]: '冒险模式',
 };
 
 export const GAMEMODE_ICONS = {
@@ -28,6 +30,7 @@ export const GAMEMODE_ICONS = {
   [GAMEMODE.SPECTATOR]: '👁️',
   [GAMEMODE.SKYBLOCK]: '🏝️',
   [GAMEMODE.EXPERIENCE]: '🎁',
+  [GAMEMODE.ADVENTURE]: '🏰',
 };
 
 // 各模式的配置
@@ -114,6 +117,22 @@ export const GAMEMODE_CONFIG = {
     mobSpawning: true,
     deathAction: 'none',
     experienceMode: true, // 体验模式：免合成直接使用所有可合成物品
+  },
+  [GAMEMODE.ADVENTURE]: {
+    name: '冒险模式',
+    canFly: false,
+    canTakeDamage: true,
+    mobSpawning: false,          // 冒险模式接管自己的刷怪
+    deathAction: 'adventure_respawn',
+    canBreakInstantly: false,
+    canPlaceBlocks: true,
+    canInteract: true,
+    healthRegen: true,
+    hungerEnabled: false,
+    keepInventory: true,
+    infiniteBlocks: false,
+    noclip: false,
+    experienceMode: false,
   },
 };
 
